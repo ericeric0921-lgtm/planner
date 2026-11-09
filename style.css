@@ -182,7 +182,18 @@ ul{list-style:none;margin:0;padding:0}
 .ill small{font-size:12px}
 
 /* Todo-ish rows */
-.todo{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed var(--line)}
+/* 可滑動的清單列 */
+.todo,.task{position:relative;overflow:hidden;border-bottom:1px dashed var(--line);-webkit-touch-callout:none;-webkit-user-select:none;user-select:none}
+.row-in{position:relative;z-index:1;display:flex;align-items:center;gap:12px;padding:9px 0;background:var(--card);will-change:transform}
+.row-acts{position:absolute;inset:0;display:flex;align-items:center;justify-content:space-between;padding:0 16px;font-size:13px;font-weight:600;letter-spacing:.08em;color:#fff;opacity:0}
+.row-acts span{display:flex;align-items:center;gap:6px;transition:transform .2s}
+.row-acts svg{width:18px;height:18px;stroke-width:2.2}
+.swr .row-acts{opacity:1;background:#5f8a62}
+.swl .row-acts{opacity:1;background:var(--accent)}
+.swr .ra-r,.swl .ra-l{visibility:hidden}
+.armed .row-acts span{transform:scale(1.12)}
+.todo.dragging{z-index:5;overflow:visible;border-bottom-color:transparent}
+.todo.dragging .row-in{border-radius:10px;box-shadow:0 12px 28px -10px rgba(40,25,10,.45),0 0 0 1px var(--line-2);transform:scale(1.03);transition:transform .2s,box-shadow .2s;padding-left:8px;padding-right:8px;margin:0 -8px}
 .todo-t{flex:1;font-size:15.5px;line-height:1.45;word-break:break-word;cursor:pointer;transition:color .25s}
 /* 手寫感刪除線：完成時從左畫到右 */
 .st{
@@ -211,7 +222,7 @@ ul{list-style:none;margin:0;padding:0}
 .ev-sub{display:block;font-size:12px;color:var(--ink-3);margin-top:2px}
 
 /* Tasks (assignments / exams) */
-.task{display:flex;align-items:flex-start;gap:12px;padding:10px 0;border-bottom:1px dashed var(--line)}
+.task .row-in{align-items:flex-start;padding:10px 0}
 .task:last-child{border-bottom:0}
 .task .chk{margin-top:1px}
 .task-main{flex:1;min-width:0;cursor:pointer}
@@ -411,6 +422,42 @@ input::-webkit-date-and-time-value{text-align:left}
 /* toast */
 .toast{position:fixed;left:50%;bottom:calc(var(--tabbar) + env(safe-area-inset-bottom) + 18px);transform:translate(-50%,10px);z-index:80;background:var(--ink);color:var(--paper);padding:10px 18px;border-radius:99px;font-size:14px;opacity:0;transition:all .28s;pointer-events:none;white-space:nowrap}
 .toast.show{opacity:1;transform:translate(-50%,0)}
+.toast.has-act{display:flex;align-items:center;gap:14px;padding:6px 6px 6px 18px;pointer-events:auto}
+.toast button{color:var(--paper);font-weight:700;padding:6px 12px;border-radius:99px;background:color-mix(in srgb,var(--paper) 18%,transparent)}
+
+/* 浮動新增按鈕 */
+.fab{
+  position:fixed;z-index:15;right:max(18px, env(safe-area-inset-right));
+  bottom:calc(var(--tabbar) + env(safe-area-inset-bottom) + 16px);
+  width:54px;height:54px;border-radius:50%;display:grid;place-items:center;
+  background:var(--ink);color:var(--paper);
+  box-shadow:0 10px 24px -8px rgba(40,25,10,.55),0 2px 6px rgba(40,25,10,.15);
+  transition:transform .2s cubic-bezier(.3,1.5,.5,1),opacity .2s;
+}
+.fab svg{width:24px;height:24px;stroke-width:2.2}
+.fab:active{transform:scale(.9)}
+body[data-view="study"] .fab{opacity:0;pointer-events:none;transform:scale(.6)}
+body:has(.sheet-wrap) .fab{opacity:0;pointer-events:none}
+#view{padding-bottom:calc(var(--tabbar) + env(safe-area-inset-bottom) + 92px)}
+
+.qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:4px 0 8px}
+.qa-grid button{display:flex;flex-direction:column;align-items:center;gap:10px;padding:18px 6px 16px;border-radius:16px;background:var(--card);border:1px solid var(--line);font-size:14.5px;font-weight:600}
+.qa-grid button:active{transform:scale(.95);background:var(--paper-2)}
+.qa-ic{width:46px;height:46px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent)}
+.qa-ic svg{width:22px;height:22px;stroke-width:2}
+
+/* 未完成待辦帶到今天 */
+.carry{display:flex;align-items:center;gap:8px;margin-top:14px;padding:12px 12px 12px 16px;border-radius:var(--r);background:var(--accent-soft);animation:fadeUp .35s ease}
+.carry-t{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+.carry-t b{font-size:14.5px;font-weight:600}
+.carry-t small{font-size:12px;color:var(--ink-2)}
+.carry-skip{padding:8px 10px;font-size:13.5px;color:var(--ink-2)}
+.carry-go{padding:8px 13px;border-radius:99px;background:var(--accent);color:#fff;font-size:13.5px;font-weight:600;white-space:nowrap}
+.carry-go:active,.carry-skip:active{opacity:.7}
+
+/* 重複行程標記 */
+.rep{display:inline-flex;vertical-align:middle;margin-left:6px;color:var(--ink-3)}
+.rep svg{width:13px;height:13px;stroke-width:2}
 
 @media (min-width:700px){
   .big-num{font-size:96px}

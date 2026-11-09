@@ -38,6 +38,9 @@ const I = {
   x: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
   down: '<svg viewBox="0 0 24 24"><path d="M12 4v12M7 11l5 5 5-5M5 20h14"/></svg>',
   up: '<svg viewBox="0 0 24 24"><path d="M12 16V4M7 9l5-5 5 5M5 20h14"/></svg>',
+  repeat: '<svg viewBox="0 0 24 24"><path d="M17 2l4 4-4 4"/><path d="M3 11V9a3 3 0 0 1 3-3h15"/><path d="M7 22l-4-4 4-4"/><path d="M21 13v2a3 3 0 0 1-3 3H3"/></svg>',
+  clock: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>',
+  book: '<svg viewBox="0 0 24 24"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2.5H20v19H6.5A2.5 2.5 0 0 1 4 19V5a2.5 2.5 0 0 1 2.5-2.5z"/></svg>',
 };
 
 const MOODS = [
@@ -64,6 +67,7 @@ function defaults() {
     habitLog: {},  // 'YYYY-MM-DD' -> [habitId]
     subjects,
     tasks: [],     // { id, title, type, subject, due, note, done }
+    recurring: [], // { id, title, time, end, place, freq:'daily'|'weekly', wd, start, skip:[] }
     settings: { weekStart: 1, tipClosed: false },
   };
 }
@@ -101,6 +105,10 @@ const month = k => data.months[k] || (data.months[k] = { goals: [], memo: '' });
 const subj = id => data.subjects.find(x => x.id === id);
 const tasksOn = s => data.tasks.filter(t => t.due === s);
 const sortEv = arr => [...arr].sort((a, b) => (a.time || '').localeCompare(b.time || ''));
+// 重複行程：每天 / 每週
+const recurOn = s => (data.recurring || []).filter(r =>
+  s >= r.start && !(r.skip || []).includes(s) && (r.freq === 'daily' || parse(s).getDay() === r.wd)).map(r => ({ ...r, rec: true }));
+const eventsOn = s => sortEv([...peekDay(s).events, ...recurOn(s)]);
 
 function isoWeek(s) {
   const d = parse(s); d.setDate(d.getDate() + 3 - (d.getDay() + 6) % 7);
@@ -127,10 +135,12 @@ const sec = (tc, en, body, act = '') =>
 const addBtn = (a, extra = '') => `<button class="add-btn" data-a="${a}" ${extra} aria-label="新增">${I.plus}</button>`;
 
 function checkList(kind, items, ph) {
-  return `<ul>${items.map(t => `
-    <li class="todo ${t.done ? 'done' : ''}">
-      <button class="chk ${t.done ? 'on' : ''}" data-a="item-toggle" data-k="${kind}" data-id="${t.id}" aria-label="完成">${I.check}</button>
-      <span class="todo-t" data-a="item-edit" data-k="${kind}" data-id="${t.id}"><span class="st">${esc(t.text)}</span></span>
+  return `<ul class="rows">${items.map(t => `
+    <li class="todo ${t.done ? 'done' : ''}" data-k="${kind}" data-id="${t.id}">${ROW_ACTS}
+      <div class="row-in">
+        <button class="chk ${t.done ? 'on' : ''}" data-a="item-toggle" data-k="${kind}" data-id="${t.id}" aria-label="完成">${I.check}</button>
+        <span class="todo-t" data-a="item-edit" data-k="${kind}" data-id="${t.id}"><span class="st">${esc(t.text)}</span></span>
+      </div>
     </li>`).join('')}</ul>
     <label class="add-wrap">${I.plus}<input class="add-line" data-add="${kind}" placeholder="${ph}" enterkeyhint="done" autocomplete="off"></label>`;
 }
@@ -147,7 +157,7 @@ function dueLabel(t) {
 function taskRow(t, showDate = true) {
   const s = subj(t.subject);
   const late = !t.done && t.due < today();
-  return `<li class="task ${t.done ? 'done' : ''} ${late ? 'late' : ''}">
+  return `<li class="task ${t.done ? 'done' : ''} ${late ? 'late' : ''}" data-id="${t.id}">${ROW_ACTS}<div class="row-in">
     <button class="chk ${t.done ? 'on' : ''}" data-a="task-toggle" data-id="${t.id}" aria-label="完成">${I.check}</button>
     <div class="task-main" data-a="task-edit" data-id="${t.id}">
       <div class="task-t"><span class="st">${esc(t.title)}</span></div>
@@ -158,8 +168,9 @@ function taskRow(t, showDate = true) {
       </div>
     </div>
     ${showDate ? `<span class="dchip">${dueLabel(t)}</span>` : ''}
-  </li>`;
+  </div></li>`;
 }
+const ROW_ACTS = `<div class="row-acts" aria-hidden="true"><span class="ra-l">${I.check}完成</span><span class="ra-r">刪除${I.trash}</span></div>`;
 
 function hasContent(s) {
   const D = data.days[s];
@@ -188,16 +199,32 @@ function renderDay() {
   // 截止與考試
   const due = data.tasks.filter(t => t.due === s || (isToday && !t.done && t.due < s))
     .sort((a, b) => a.due.localeCompare(b.due));
-  const dueHtml = due.length ? sec('截止與考試', 'Due', `<ul>${due.map(t => taskRow(t, t.due !== s)).join('')}</ul>`) : '';
+  const dueHtml = due.length ? sec('截止與考試', 'Due', `<ul class="rows">${due.map(t => taskRow(t, t.due !== s)).join('')}</ul>`) : '';
+
+  // 之前沒做完的待辦（最近 14 天）
+  let carry = '';
+  if (isToday && data.settings.carryDone !== T) {
+    let n = 0, oldest = null;
+    for (let i = 1; i <= 14; i++) {
+      const x = addDays(T, -i), P = data.days[x];
+      const c = P ? P.todos.filter(t => !t.done).length : 0;
+      if (c) { n += c; oldest = x; }
+    }
+    if (n) carry = `<div class="carry">
+      <div class="carry-t"><b>之前有 ${n} 項待辦沒完成</b><small>${oldest === addDays(T, -1) ? '來自昨天' : `最早從 ${md(oldest)} 開始`}</small></div>
+      <button class="carry-skip" data-a="carry-skip">略過</button>
+      <button class="carry-go" data-a="carry-move">移到今天</button>
+    </div>`;
+  }
 
   // 行程
-  const evs = sortEv(D.events);
+  const evs = eventsOn(s);
   const evHtml = sec('行程', 'Schedule',
     evs.length ? `<ul class="timeline">${evs.map(e => `
-      <li data-a="ev-edit" data-id="${e.id}">
+      <li data-a="ev-edit" data-id="${e.id}" ${e.rec ? 'data-rec="1"' : ''}>
         <span class="ev-time ${e.time ? '' : 'allday'}">${e.time ? `${e.time}${e.end ? `<small>${e.end}</small>` : ''}` : '整天'}</span>
         <span class="ev-line"></span>
-        <span class="ev-t">${esc(e.title)}${e.place ? `<span class="ev-sub">${esc(e.place)}</span>` : ''}</span>
+        <span class="ev-t">${esc(e.title)}${e.rec ? `<i class="rep" title="重複">${I.repeat}</i>` : ''}${e.place ? `<span class="ev-sub">${esc(e.place)}</span>` : ''}</span>
       </li>`).join('')}</ul>`
       : `<button class="empty-add" data-a="ev-new">${I.plus}新增行程</button>`,
     addBtn('ev-new'));
@@ -233,7 +260,7 @@ function renderDay() {
         <button class="strip-nav" data-a="step" data-n="-7" aria-label="上一週">${I.left}</button>${strip}<button class="strip-nav" data-a="step" data-n="7" aria-label="下一週">${I.right}</button>
       </div>
     </header>
-    ${tip}${dueHtml}${todoHtml}${evHtml}${habHtml}${noteHtml}
+    ${tip}${carry}${dueHtml}${todoHtml}${evHtml}${habHtml}${noteHtml}
   </div>`;
 }
 
@@ -257,7 +284,7 @@ function renderWeek() {
   const rows = days.map(x => {
     const xd = parse(x), D = peekDay(x), wd = xd.getDay();
     const items = [];
-    sortEv(D.events).slice(0, 4).forEach(e => items.push(`<div class="wk-it"><span class="tm">${e.time || '整天'}</span><span class="tx">${esc(e.title)}</span></div>`));
+    eventsOn(x).slice(0, 4).forEach(e => items.push(`<div class="wk-it"><span class="tm">${e.time || '整天'}</span><span class="tx">${esc(e.title)}</span></div>`));
     tasksOn(x).forEach(t => { const s = subj(t.subject); items.push(`<div class="wk-it tk ${t.type === '考試' ? 'exam' : ''}" style="--c:${s ? s.color : 'var(--ink-3)'}"><span class="tx">${esc(t.type)}・${esc(t.title)}${t.done ? '（完成）' : ''}</span></div>`); });
     if (D.todos.length) {
       const dn = D.todos.filter(t => t.done).length;
@@ -304,7 +331,7 @@ function renderMonth() {
   for (let i = 0; i < rows * 7; i++) {
     const x = addDays(start, i), xd = parse(x), wd = xd.getDay(), D = data.days[x];
     const dots = [];
-    if (D && D.events.length) dots.push('<i></i>');
+    if ((D && D.events.length) || recurOn(x).length) dots.push('<i></i>');
     tasksOn(x).filter(t => !t.done).slice(0, 3).forEach(t => {
       if (t.type === '考試') dots.push('<i class="sq"></i>');
       else { const s = subj(t.subject); dots.push(`<i style="--c:${s ? s.color : 'var(--ink-3)'}"></i>`); }
@@ -316,7 +343,7 @@ function renderMonth() {
   // 選取日預覽
   const sd = parse(cur), SD = peekDay(cur);
   const ag = [];
-  sortEv(SD.events).forEach(e => ag.push(`<div class="wk-it"><span class="tm">${e.time || '整天'}</span><span class="tx">${esc(e.title)}</span></div>`));
+  eventsOn(cur).forEach(e => ag.push(`<div class="wk-it"><span class="tm">${e.time || '整天'}</span><span class="tx">${esc(e.title)}</span></div>`));
   tasksOn(cur).forEach(t => { const s = subj(t.subject); ag.push(`<div class="wk-it tk ${t.type === '考試' ? 'exam' : ''}" style="--c:${s ? s.color : 'var(--ink-3)'}"><span class="tx">${esc(t.type)}・${esc(t.title)}</span></div>`); });
   if (SD.todos.length) ag.push(`<div class="wk-prog"><span>待辦 ${SD.todos.filter(t => t.done).length}/${SD.todos.length}</span></div>`);
 
@@ -408,6 +435,7 @@ function render(anim) {
   v.innerHTML = VIEWS[view]();
   if (anim) { void v.offsetWidth; v.classList.add(anim); }
   $$('.tab').forEach(t => t.classList.toggle('on', t.dataset.tab === view));
+  document.body.dataset.view = view;
   $$('textarea.lined', v).forEach(autosize);
 }
 function commit(anim) { save(); render(anim); }
@@ -490,11 +518,19 @@ const vals = w => Object.fromEntries($$('[name]', w).map(i => [i.name, i.value])
 const picked = (w, name) => { const b = $(`.pick[data-name="${name}"] .on, .palette[data-name="${name}"] .on`, w); return b ? b.dataset.v : null; };
 
 let toastT;
-function toast(msg) {
+function toast(msg, undo) {
   let t = $('.toast');
   if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
-  t.textContent = msg; t.classList.add('show');
-  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), 1800);
+  t.innerHTML = `<span>${esc(msg)}</span>`;
+  t.classList.toggle('has-act', !!undo);
+  if (undo) {
+    const b = document.createElement('button');
+    b.textContent = '復原';
+    b.onclick = () => { t.classList.remove('show'); undo(); };
+    t.appendChild(b);
+  }
+  t.classList.add('show');
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove('show'), undo ? 4000 : 1800);
 }
 
 /* ---------- 各種編輯表單 ---------- */
@@ -519,27 +555,86 @@ function itemSheet(kind, id) {
   });
 }
 
-function eventSheet(id) {
-  const date = cur, D = day(date);
-  const e = id ? D.events.find(x => x.id === id) : null;
-  const v = e || { title: '', time: '', end: '', place: '' };
+function eventSheet(id, isRec, presetDate) {
+  const date = presetDate || cur, D = day(date);
+  if (!data.recurring) data.recurring = [];
+  const r = isRec ? data.recurring.find(x => x.id === id) : null;
+  const e = !isRec && id ? D.events.find(x => x.id === id) : null;
+  const v = r || e || { title: '', time: '', end: '', place: '' };
+  const rep = r ? r.freq : '';
   sheet({
-    title: e ? '編輯行程' : '新增行程',
+    title: r || e ? '編輯行程' : '新增行程',
     body: `<label class="field"><span>標題</span><input name="title" value="${esc(v.title)}" placeholder="例如：社團、補習、讀書會" autocomplete="off"></label>
       <label class="field"><span>日期</span><input type="date" name="date" value="${date}"></label>
       <div class="row2">
         <label class="field"><span>開始（可留空＝整天）</span><input type="time" name="time" value="${v.time}"></label>
         <label class="field"><span>結束</span><input type="time" name="end" value="${v.end || ''}"></label>
       </div>
-      <label class="field"><span>地點 / 備註</span><input name="place" value="${esc(v.place || '')}" autocomplete="off"></label>`,
+      <div class="field"><span>重複</span><div class="pick" data-name="rep">
+        <button data-v="" class="${!rep ? 'on' : ''}">不重複</button>
+        <button data-v="weekly" class="${rep === 'weekly' ? 'on' : ''}">每週</button>
+        <button data-v="daily" class="${rep === 'daily' ? 'on' : ''}">每天</button>
+      </div></div>
+      <label class="field"><span>地點 / 備註</span><input name="place" value="${esc(v.place || '')}" autocomplete="off"></label>
+      ${r ? `<div class="btn-row"><button data-s2="skip">${I.x}只刪除 ${md(date)} 這一次</button></div>` : ''}`,
     save: w => {
       const f = vals(w);
       if (!f.title.trim()) { toast('請輸入標題'); return false; }
-      if (e) D.events.splice(D.events.indexOf(e), 1);
-      day(f.date || date).events.push({ id: e ? e.id : uid(), title: f.title.trim(), time: f.time, end: f.time ? f.end : '', place: f.place.trim() });
-      if (f.date && f.date !== date) toast(`已存到 ${md(f.date)}`);
+      const d2 = f.date || date, repV = picked(w, 'rep') || '';
+      const o = { title: f.title.trim(), time: f.time, end: f.time ? f.end : '', place: f.place.trim() };
+      if (r) {
+        if (repV) { Object.assign(r, o, { freq: repV, wd: parse(d2).getDay() }); if (d2 < r.start) r.start = d2; }
+        else { data.recurring.splice(data.recurring.indexOf(r), 1); day(d2).events.push({ id: uid(), ...o }); }
+      } else {
+        if (e) D.events.splice(D.events.indexOf(e), 1);
+        if (repV) data.recurring.push({ id: e ? e.id : uid(), ...o, freq: repV, wd: parse(d2).getDay(), start: d2, skip: [] });
+        else day(d2).events.push({ id: e ? e.id : uid(), ...o });
+      }
+      if (d2 !== date) toast(`已存到 ${md(d2)}`);
     },
-    del: e && { fn: () => D.events.splice(D.events.indexOf(e), 1) },
+    del: r ? { label: '刪除整個重複行程', confirm: `刪除「${r.title}」的所有重複日期？`, fn: () => data.recurring.splice(data.recurring.indexOf(r), 1) }
+      : e && { fn: () => D.events.splice(D.events.indexOf(e), 1) },
+    onClick: ev => {
+      if (r && ev.target.closest('[data-s2="skip"]')) {
+        (r.skip || (r.skip = [])).push(date);
+        closeSheet(); commit(); toast('已刪除這一次');
+        return true;
+      }
+    },
+  });
+}
+
+function todoSheet() {
+  sheet({
+    title: '新增待辦',
+    body: `<label class="field"><span>內容</span><input name="text" placeholder="要做什麼？" autocomplete="off" enterkeyhint="done"></label>
+      <div class="field"><span>日期</span>
+        <div class="quick">${[['今天', 0], ['明天', 1], ['後天', 2], ['下週', 7]].map(([l, n]) => `<button type="button" data-q="${addDays(today(), n)}">${l}</button>`).join('')}</div>
+        <input type="date" name="date" value="${cur}"></div>`,
+    save: w => {
+      const f = vals(w);
+      if (!f.text.trim()) { toast('請輸入內容'); return false; }
+      day(f.date || cur).todos.push({ id: uid(), text: f.text.trim(), done: false });
+      if ((f.date || cur) !== cur) toast(`已加到 ${md(f.date)}`);
+    },
+    onClick: (e, w) => { const q = e.target.closest('[data-q]'); if (q) { $('[name=date]', w).value = q.dataset.q; return true; } },
+    onMount: w => $('[name=text]', w).addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); $('[data-s="save"]', w).click(); } }),
+  });
+}
+
+function quickSheet() {
+  sheet({
+    title: '快速新增',
+    body: `<div class="qa-grid">
+      <button data-q2="todo"><span class="qa-ic">${I.check}</span>待辦</button>
+      <button data-q2="event"><span class="qa-ic">${I.clock}</span>行程</button>
+      <button data-q2="task"><span class="qa-ic">${I.book}</span>作業・考試</button>
+    </div>`,
+    onClick: e => {
+      const b = e.target.closest('[data-q2]'); if (!b) return;
+      ({ todo: todoSheet, event: () => eventSheet(null), task: () => taskSheet(null) })[b.dataset.q2]();
+      return true;
+    },
   });
 }
 
@@ -707,7 +802,20 @@ const ACTIONS = {
   },
   'item-edit': b => itemSheet(b.dataset.k, b.dataset.id),
   'ev-new': () => eventSheet(null),
-  'ev-edit': b => eventSheet(b.dataset.id),
+  'ev-edit': b => eventSheet(b.dataset.id, b.dataset.rec === '1'),
+  quick: () => quickSheet(),
+  'carry-skip': () => { data.settings.carryDone = today(); commit(); },
+  'carry-move': () => {
+    const T = today(); let n = 0;
+    for (let i = 14; i >= 1; i--) {
+      const P = data.days[addDays(T, -i)]; if (!P) continue;
+      const left = P.todos.filter(t => !t.done);
+      if (!left.length) continue;
+      P.todos = P.todos.filter(t => t.done);
+      day(T).todos.push(...left); n += left.length;
+    }
+    data.settings.carryDone = T; commit(); haptic(); toast(`已移入 ${n} 項待辦`);
+  },
   'task-new': () => taskSheet(null),
   'task-edit': b => taskSheet(b.dataset.id),
   'task-toggle': b => {
@@ -778,6 +886,7 @@ function celebrate(text) {
 
 document.addEventListener('click', e => {
   if (e.target.closest('.sheet-wrap')) return;
+  if (Date.now() < suppressClickUntil) { e.preventDefault(); return; }
   const tab = e.target.closest('[data-tab]');
   if (tab) { if (tab.dataset.tab === view) { $('#view').scrollTo({ top: 0, behavior: 'smooth' }); } else setView(tab.dataset.tab); return; }
   const b = e.target.closest('[data-a]');
@@ -816,40 +925,133 @@ document.addEventListener('input', e => {
   autosize(t); saveSoon();
 });
 
-// 左右滑動切換日期（畫面跟著手指移動）
+/* ---------- 手勢 ----------
+   在清單列上：右滑＝完成、左滑＝刪除、長按＝拖曳排序（待辦／目標）
+   在其他地方：左右滑＝換日／週／月（畫面跟著手指） */
+let suppressClickUntil = 0;
+
+function rowData(li) {
+  if (li.classList.contains('task')) return { arr: data.tasks, id: li.dataset.id };
+  return { arr: listOf(li.dataset.k), id: li.dataset.id };
+}
+function deleteRow(li) {
+  const { arr, id } = rowData(li), i = arr.findIndex(x => x.id === id);
+  if (i < 0) return;
+  const item = arr.splice(i, 1)[0];
+  save(); haptic();
+  const inner = $('.row-in', li);
+  inner.style.transition = 'transform .2s ease-in';
+  inner.style.transform = 'translateX(-110%)';
+  li.style.height = li.offsetHeight + 'px';
+  setTimeout(() => { li.style.transition = 'height .22s ease, opacity .22s'; li.style.height = '0px'; li.style.opacity = '0'; }, 150);
+  setTimeout(render, 400);
+  toast('已刪除', () => { arr.splice(Math.min(i, arr.length), 0, item); commit(); });
+}
+
 (() => {
-  const v = $('#view');
-  let sx = null, sy = 0, st = 0, axis = null, dx = 0, inner = null;
+  const v = $('#view'), TH = 80;
+  let g = null;
+
   v.addEventListener('touchstart', e => {
-    if (e.touches.length !== 1 || view === 'study' || e.target.closest('textarea, input, .hgrid')) { sx = null; return; }
-    sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
-    axis = null; dx = 0; inner = v.firstElementChild;
-  }, { passive: true });
-  v.addEventListener('touchmove', e => {
-    if (sx == null || !inner) return;
-    const x = e.touches[0].clientX - sx, y = e.touches[0].clientY - sy;
-    if (!axis) {
-      if (Math.abs(x) < 10 && Math.abs(y) < 10) return;
-      axis = Math.abs(x) > Math.abs(y) * 1.2 ? 'x' : 'y';
-      if (axis === 'x') v.classList.remove('slide-next', 'slide-prev', 'fade');
+    if (g) clearTimeout(g.lp);
+    if (e.touches.length !== 1 || e.target.closest('textarea, input, .hgrid')) { g = null; return; }
+    const t = e.touches[0], row = e.target.closest('li.todo, li.task');
+    g = { x: t.clientX, y: t.clientY, t: Date.now(), axis: null, dx: 0, mode: null, row, inner: v.firstElementChild, armed: false };
+    if (row && row.classList.contains('todo') && row.parentElement.children.length > 1) {
+      const s = g; s.lp = setTimeout(() => startDrag(s), 450);
     }
-    if (axis !== 'x') return;
-    dx = x;
-    inner.style.transition = 'none';
-    inner.style.transform = `translateX(${x * 0.5}px)`;
-    inner.style.opacity = String(1 - Math.min(Math.abs(x) / 500, 0.45));
   }, { passive: true });
+
+  v.addEventListener('touchmove', e => {
+    if (!g) return;
+    const t = e.touches[0], x = t.clientX - g.x, y = t.clientY - g.y;
+    if (g.mode === 'drag') { e.preventDefault(); moveDrag(g, t.clientY); return; }
+    if (!g.axis) {
+      if (Math.abs(x) < 10 && Math.abs(y) < 10) return;
+      clearTimeout(g.lp);
+      g.axis = Math.abs(x) > Math.abs(y) * 1.2 ? 'x' : 'y';
+      if (g.axis === 'x') g.mode = g.row ? 'row' : (view !== 'study' ? 'page' : null);
+      if (g.mode === 'page') v.classList.remove('slide-next', 'slide-prev', 'fade');
+    }
+    if (g.axis !== 'x' || !g.mode) return;
+    e.preventDefault();
+    g.dx = x;
+    if (g.mode === 'row') rowMove(g, x); else pageMove(g, x);
+  }, { passive: false });
+
   const end = () => {
-    if (sx == null) return;
-    sx = null;
-    if (axis !== 'x' || !inner) return;
-    const fast = Math.abs(dx) > 30 && Date.now() - st < 250;
-    if (Math.abs(dx) > 70 || fast) { step(dx < 0 ? 1 : -1); return; }
-    inner.style.transition = 'transform .35s cubic-bezier(.2,.8,.2,1), opacity .35s';
-    inner.style.transform = ''; inner.style.opacity = '';
+    if (!g) return;
+    clearTimeout(g.lp);
+    const s = g; g = null;
+    if (s.mode === 'drag') endDrag(s);
+    else if (s.mode === 'row') rowEnd(s);
+    else if (s.mode === 'page') pageEnd(s);
   };
   v.addEventListener('touchend', end, { passive: true });
   v.addEventListener('touchcancel', end, { passive: true });
+
+  // 換頁
+  function pageMove(s, x) {
+    s.inner.style.transition = 'none';
+    s.inner.style.transform = `translateX(${x * 0.5}px)`;
+    s.inner.style.opacity = String(1 - Math.min(Math.abs(x) / 500, 0.45));
+  }
+  function pageEnd(s) {
+    const fast = Math.abs(s.dx) > 30 && Date.now() - s.t < 250;
+    if (Math.abs(s.dx) > 70 || fast) { step(s.dx < 0 ? 1 : -1); return; }
+    s.inner.style.transition = 'transform .35s cubic-bezier(.2,.8,.2,1), opacity .35s';
+    s.inner.style.transform = ''; s.inner.style.opacity = '';
+  }
+
+  // 列滑動
+  function rowMove(s, x) {
+    const inner = $('.row-in', s.row), ax = Math.abs(x);
+    const d = Math.sign(x) * (ax > 140 ? 140 + (ax - 140) * 0.2 : ax);
+    inner.style.transition = 'none';
+    inner.style.transform = `translateX(${d}px)`;
+    s.row.classList.toggle('swr', x > 0);
+    s.row.classList.toggle('swl', x < 0);
+    const armed = ax > TH;
+    if (armed !== s.armed) { s.armed = armed; s.row.classList.toggle('armed', armed); if (armed) haptic(); }
+  }
+  function rowEnd(s) {
+    suppressClickUntil = Date.now() + 350;
+    const inner = $('.row-in', s.row);
+    const reset = () => {
+      inner.style.transition = 'transform .3s cubic-bezier(.2,.8,.2,1)';
+      inner.style.transform = '';
+      setTimeout(() => s.row.classList.remove('swr', 'swl', 'armed'), 300);
+    };
+    if (s.dx > TH) { reset(); const chk = $('.chk', s.row); ACTIONS[chk.dataset.a](chk); }
+    else if (s.dx < -TH) deleteRow(s.row);
+    else reset();
+  }
+
+  // 長按拖曳排序
+  function startDrag(s) {
+    if (g !== s || s.axis) return;
+    s.mode = 'drag'; s.top0 = s.row.offsetTop;
+    s.row.classList.add('dragging');
+    haptic();
+    suppressClickUntil = Date.now() + 60000;
+  }
+  function moveDrag(s, y) {
+    const row = s.row, mid = s.top0 + (y - s.y) + row.offsetHeight / 2;
+    const prev = row.previousElementSibling, next = row.nextElementSibling;
+    if (next && mid > next.offsetTop + next.offsetHeight / 2) { row.parentElement.insertBefore(next, row); haptic(); }
+    else if (prev && mid < prev.offsetTop + prev.offsetHeight / 2) { row.parentElement.insertBefore(row, prev); haptic(); }
+    row.style.transform = `translateY(${s.top0 + (y - s.y) - row.offsetTop}px)`;
+  }
+  function endDrag(s) {
+    const row = s.row;
+    row.style.transition = 'transform .25s cubic-bezier(.2,.8,.2,1)';
+    row.style.transform = '';
+    setTimeout(() => { row.classList.remove('dragging'); row.style.transition = ''; }, 250);
+    suppressClickUntil = Date.now() + 350;
+    const ids = $$('li.todo', row.parentElement).map(li => li.dataset.id);
+    listOf(row.dataset.k).sort((a, b) => ids.indexOf(a.id) - ids.indexOf(b.id));
+    save();
+  }
 })();
 
 // 隔天打開時自動跳到今天
