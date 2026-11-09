@@ -1,5 +1,5 @@
 // 日程本+ service worker：離線也能開啟
-const CACHE = 'planner-plus-v1';
+const CACHE = 'planner-plus-v2';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest',
   'icons/apple-touch-icon.png', 'icons/icon-192.png', 'icons/icon-512.png'];
 

@@ -15,11 +15,9 @@ const diffDays = (a, b) => Math.round((parse(b) - parse(a)) / 864e5);
 const uid = () => Math.random().toString(36).slice(2, 8) + Date.now().toString(36).slice(-4);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const md = s => { const d = parse(s); return `${d.getMonth() + 1}/${d.getDate()}`; };
-const nowHM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 
 const MONTH_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 const WD_TC = ['日', '一', '二', '三', '四', '五', '六'];
-const WD_EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const TASK_TYPES = ['作業', '考試', '報告', '其他'];
 const PALETTE = ['#c4553a', '#d4903c', '#b9a23f', '#7a9a4a', '#3f8a7c', '#3d6a9e', '#6b5b9a', '#b0607e', '#8a7a66'];
 
@@ -59,11 +57,8 @@ function defaults() {
     habits: ['早起', '運動', '閱讀'].map(name => ({ id: uid(), name })),
     habitLog: {},  // 'YYYY-MM-DD' -> [habitId]
     subjects,
-    periods: [['08:10', '09:00'], ['09:10', '10:00'], ['10:10', '11:00'], ['11:10', '12:00'],
-              ['13:10', '14:00'], ['14:10', '15:00'], ['15:10', '16:00']].map(([start, end]) => ({ start, end })),
-    timetable: {}, // '週幾(1-6)-節次index' -> { s: subjectId, room }
     tasks: [],     // { id, title, type, subject, due, note, done }
-    settings: { weekStart: 1, saturday: false, tipClosed: false },
+    settings: { weekStart: 1, tipClosed: false },
   };
 }
 
@@ -72,6 +67,7 @@ function load() {
     const raw = localStorage.getItem(KEY);
     if (raw) {
       const p = JSON.parse(raw), d = defaults();
+      delete p.timetable; delete p.periods; // 舊版課表資料
       return { ...d, ...p, settings: { ...d.settings, ...(p.settings || {}) } };
     }
   } catch (e) { console.warn(e); }
@@ -117,12 +113,11 @@ function listOf(kind) {
 let cur = today();
 let lastToday = today();
 let view = (() => { try { return localStorage.getItem(KEY + ':tab') || 'day'; } catch { return 'day'; } })();
-let studyTab = 'timetable';
 let taskFilter = 'open';
 
 /* ---------- 共用片段 ---------- */
 const sec = (tc, en, body, act = '') =>
-  `<section class="sec"><div class="sec-h"><h3>${tc}</h3><span class="en">${en}</span>${act ? `<div class="act">${act}</div>` : ''}</div>${body}</section>`;
+  `<section class="sec"><div class="sec-h"><h3>${tc}</h3>${act ? `<div class="act">${act}</div>` : ''}</div>${body}</section>`;
 const addBtn = (a, extra = '') => `<button class="add-btn" data-a="${a}" ${extra} aria-label="新增">${I.plus}</button>`;
 
 function checkList(kind, items, ph) {
@@ -165,13 +160,6 @@ function hasContent(s) {
   return !!(D && (D.todos.length || D.events.length || D.note)) || data.tasks.some(t => t.due === s);
 }
 
-function classesOf(s) {
-  const wd = parse(s).getDay();
-  if (wd === 0 || (wd === 6 && !data.settings.saturday)) return [];
-  return data.periods.map((p, i) => ({ p, i, c: data.timetable[`${wd}-${i}`] }))
-    .filter(x => x.c && subj(x.c.s));
-}
-
 /* =========================================================
    每日
    ========================================================= */
@@ -191,15 +179,6 @@ function renderDay() {
   const tip = (isIOS && !standalone && !data.settings.tipClosed)
     ? `<div class="tip"><div>在 Safari 點 <b>分享</b> → <b>加入主畫面</b>，就能像 App 一樣全螢幕使用。</div><button class="x" data-a="close-tip" aria-label="關閉">×</button></div>` : '';
 
-  // 今日課程
-  const cls = classesOf(s);
-  const hm = nowHM();
-  const clsHtml = cls.length ? sec('今日課程', 'Classes',
-    `<div class="classes">${cls.map(({ p, i, c }) => {
-      const sb = subj(c.s), now = isToday && hm >= p.start && hm < p.end;
-      return `<div class="cls ${now ? 'now' : ''}" style="--c:${sb.color}"><span class="p">${i + 1} · ${p.start}</span><span class="n">${esc(sb.name)}</span>${c.room ? `<span class="r">${esc(c.room)}</span>` : `<span class="r">${now ? '上課中' : '&nbsp;'}</span>`}</div>`;
-    }).join('')}</div>`) : '';
-
   // 截止與考試
   const due = data.tasks.filter(t => t.due === s || (isToday && !t.done && t.due < s))
     .sort((a, b) => a.due.localeCompare(b.due));
@@ -214,7 +193,7 @@ function renderDay() {
         <span class="ev-line"></span>
         <span class="ev-t">${esc(e.title)}${e.place ? `<span class="ev-sub">${esc(e.place)}</span>` : ''}</span>
       </li>`).join('')}</ul>`
-      : `<div class="empty">還沒有行程，按 + 新增</div>`,
+      : `<button class="empty-add" data-a="ev-new">${I.plus}新增行程</button>`,
     addBtn('ev-new'));
 
   // 待辦
@@ -228,28 +207,27 @@ function renderDay() {
     `<div class="habits">${data.habits.map(h => `<button class="habit ${log.includes(h.id) ? 'on' : ''}" data-a="habit" data-h="${h.id}" data-d="${s}"><i></i>${esc(h.name)}</button>`).join('')}</div>`) : '';
 
   // 心情 + 日記
-  const noteHtml = sec('今日一句', 'Diary',
+  const noteHtml = sec('日記', 'Diary',
     `<div class="moods">${MOODS.map(m => `<button class="mood-b ${D.mood === m.k ? 'on' : ''}" data-a="mood" data-k="${m.k}" aria-label="${m.l}">${face(m)}</button>`).join('')}</div>
      <textarea class="lined" data-bind="note" rows="4" placeholder="今天過得如何？記下一件小事吧。">${esc(D.note)}</textarea>`);
 
   return `<div>
     <header class="hd">
       <div class="hd-row">
-        <span class="eyebrow">${d.getFullYear()} · ${MONTH_EN[d.getMonth()].toUpperCase()}</span>
+        <span class="eyebrow">${d.getFullYear()} 年 ${d.getMonth() + 1} 月</span>
         <div class="hd-act">${isToday ? '' : '<button class="pill" data-a="today">回到今天</button>'}<button class="icon-btn" data-a="settings" aria-label="設定">${I.gear}</button></div>
       </div>
       <div class="day-title">
         <span class="big-num">${d.getDate()}</span>
         <div class="day-meta">
-          <span class="day-wd">星期${WD_TC[d.getDay()]}${isToday ? '<span class="stamp">TODAY</span>' : ''}</span>
-          <span class="day-en">${WD_EN[d.getDay()]}, ${MONTH_EN[d.getMonth()]}</span>
+          <span class="day-wd">星期${WD_TC[d.getDay()]}${isToday ? '<span class="stamp">今天</span>' : ''}</span>
         </div>
       </div>
       <div class="strip">
         <button class="strip-nav" data-a="step" data-n="-7" aria-label="上一週">${I.left}</button>${strip}<button class="strip-nav" data-a="step" data-n="7" aria-label="下一週">${I.right}</button>
       </div>
     </header>
-    ${tip}${clsHtml}${dueHtml}${evHtml}${todoHtml}${habHtml}${noteHtml}
+    ${tip}${dueHtml}${todoHtml}${evHtml}${habHtml}${noteHtml}
   </div>`;
 }
 
@@ -288,7 +266,7 @@ function renderWeek() {
   return `<div>
     <header class="hd">
       <div class="hd-row">
-        <span class="eyebrow">${a.getFullYear()} · WEEK ${isoWeek(ws)}</span>
+        <span class="eyebrow">${a.getFullYear()} 年・第 ${isoWeek(ws)} 週</span>
         <div class="hd-act">${inWeek ? '' : '<button class="pill" data-a="today">本週</button>'}<button class="icon-btn" data-a="settings" aria-label="設定">${I.gear}</button></div>
       </div>
       <div class="title-row">
@@ -339,11 +317,11 @@ function renderMonth() {
   return `<div>
     <header class="hd">
       <div class="hd-row">
-        <span class="eyebrow">${y} · MONTHLY</span>
+        <span class="eyebrow">${y} 年</span>
         <div class="hd-act">${monthKey(T) === monthKey(cur) ? '' : '<button class="pill" data-a="today">本月</button>'}<button class="icon-btn" data-a="settings" aria-label="設定">${I.gear}</button></div>
       </div>
       <div class="title-row">
-        <h1 class="title">${m + 1}月<span class="lat">${MONTH_EN[m]}</span></h1>
+        <h1 class="title">${m + 1} 月</h1>
         <div class="navs"><button class="nav-btn" data-a="mstep" data-n="-1" aria-label="上個月">${I.left}</button><button class="nav-btn" data-a="mstep" data-n="1" aria-label="下個月">${I.right}</button></div>
       </div>
     </header>
@@ -362,59 +340,35 @@ function renderMonth() {
 }
 
 /* =========================================================
-   課業：課表 + 作業考試
+   作業與考試
    ========================================================= */
 function renderStudy() {
-  const head = `<header class="hd">
+  const n = data.tasks.filter(t => !t.done).length;
+  return `<div>
+    <header class="hd">
       <div class="hd-row">
-        <span class="eyebrow">STUDY · ${today().slice(0, 4)}</span>
+        <span class="eyebrow">${n ? `還有 ${n} 項未完成` : '全部完成'}</span>
         <div class="hd-act"><button class="icon-btn" data-a="settings" aria-label="設定">${I.gear}</button></div>
       </div>
-      <div class="title-row"><h1 class="title">課業<span class="lat">Study</span></h1></div>
-      <div class="seg full pick-tab">
-        <button class="${studyTab === 'timetable' ? 'on' : ''}" data-a="study-tab" data-v="timetable">課表</button>
-        <button class="${studyTab === 'tasks' ? 'on' : ''}" data-a="study-tab" data-v="tasks">作業與考試${openCount() ? `（${openCount()}）` : ''}</button>
+      <div class="title-row">
+        <h1 class="title">作業與考試</h1>
+        <button class="btn-main" data-a="task-new">${I.plus}新增</button>
       </div>
-    </header>`;
-  return `<div>${head}${studyTab === 'timetable' ? renderTimetable() : renderTasks()}</div>`;
+    </header>
+    ${renderTasks()}
+    ${sec('科目', '', `<div class="chips">${data.subjects.map(s => `<button class="chip" style="--c:${s.color}" data-a="subj-edit" data-id="${s.id}">${esc(s.name)}</button>`).join('')}
+      <button class="chip add" data-a="subj-new">${I.plus}新增</button></div>`)}
+  </div>`;
 }
-const openCount = () => data.tasks.filter(t => !t.done).length;
-
-function renderTimetable() {
-  const days = data.settings.saturday ? [1, 2, 3, 4, 5, 6] : [1, 2, 3, 4, 5];
-  const twd = new Date().getDay();
-  let g = `<span></span>${days.map(d => `<div class="th ${d === twd ? 'today' : ''}">${WD_TC[d]}</div>`).join('')}`;
-  data.periods.forEach((p, i) => {
-    // 午休分隔：與上一節相隔超過 40 分鐘
-    if (i > 0) {
-      const prev = data.periods[i - 1];
-      const gap = toMin(p.start) - toMin(prev.end);
-      if (gap >= 40) g += `<div class="lunch">${toMin(prev.end) >= 690 && toMin(p.start) <= 840 ? '午休' : '休息'}</div>`;
-    }
-    g += `<div class="pn"><b>${i + 1}</b><small>${p.start}</small></div>`;
-    days.forEach(d => {
-      const c = data.timetable[`${d}-${i}`], s = c && subj(c.s);
-      g += s
-        ? `<button class="cell f ${d === twd ? 'todaycol' : ''}" style="--c:${s.color}" data-a="cell" data-k="${d}-${i}"><span class="cn">${esc(s.name)}</span>${c.room ? `<span class="cr">${esc(c.room)}</span>` : ''}</button>`
-        : `<button class="cell ${d === twd ? 'todaycol' : ''}" data-a="cell" data-k="${d}-${i}" aria-label="空堂"></button>`;
-    });
-  });
-  return `
-    ${sec('課表', 'Timetable', `<div class="tt" style="--cols:${days.length}">${g}</div>`)}
-    ${sec('科目', 'Subjects', `<div class="chips">${data.subjects.map(s => `<button class="chip" style="--c:${s.color}" data-a="subj-edit" data-id="${s.id}">${esc(s.name)}</button>`).join('')}
-      <button class="chip add" data-a="subj-new">${I.plus}新增科目</button></div>
-      <p class="hint" style="margin:10px 0 2px">點課表格子可以設定科目與教室；節次時間在右上角 ⚙ 設定。</p>`)}`;
-}
-const toMin = hm => { const [h, m] = (hm || '0:0').split(':').map(Number); return h * 60 + m; };
 
 function renderTasks() {
   const T = today(), wEnd = addDays(T, 7);
-  const list = data.tasks.filter(t => taskFilter === 'open' ? !t.done : t.done)
-    .sort((a, b) => taskFilter === 'open' ? a.due.localeCompare(b.due) : b.due.localeCompare(a.due));
+  const list = data.tasks.filter(t => !t.done).sort((a, b) => a.due.localeCompare(b.due));
+  const doneList = data.tasks.filter(t => t.done).sort((a, b) => b.due.localeCompare(a.due));
   let body = '';
   if (!list.length) {
-    body = `<div class="empty" style="padding:18px 0;text-align:center">${taskFilter === 'open' ? '沒有待完成的作業或考試 ✓' : '還沒有完成的項目'}</div>`;
-  } else if (taskFilter === 'open') {
+    body = `<div class="empty" style="padding:14px 0;text-align:center">沒有待完成的作業或考試</div>`;
+  } else {
     const groups = [
       ['已逾期', t => t.due < T, 'late'],
       ['今天', t => t.due === T],
@@ -426,27 +380,15 @@ function renderTasks() {
       const g = list.filter(fn);
       if (g.length) body += `<div class="grp-h ${cls || ''}">${name}</div><ul>${g.map(t => taskRow(t)).join('')}</ul>`;
     });
-  } else {
-    body = `<ul>${list.map(t => taskRow(t)).join('')}</ul>`;
   }
-  const exams = data.tasks.filter(t => !t.done && t.type === '考試' && t.due >= T).sort((a, b) => a.due.localeCompare(b.due));
-  const next = exams[0];
+  const next = data.tasks.filter(t => !t.done && t.type === '考試' && t.due >= T).sort((a, b) => a.due.localeCompare(b.due))[0];
+  const nd = next ? diffDays(T, next.due) : 0;
+  const showDone = taskFilter === 'done';
   return `
-    ${next ? `<section class="sec" style="display:flex;align-items:center;gap:14px">
-      <div style="font-family:var(--serif);font-size:44px;font-weight:600;line-height:.9;color:var(--accent)">${diffDays(T, next.due) || '今'}</div>
-      <div style="flex:1;min-width:0"><div style="font-size:12px;color:var(--ink-3);letter-spacing:.12em">${diffDays(T, next.due) ? '天後 · 下一場考試' : '天 · 考試'}</div>
-      <div style="font-family:var(--serif-tc);font-weight:700;font-size:17px;margin-top:3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(next.title)}</div></div>
-    </section>` : ''}
-    <section class="sec">
-      <div class="sec-h">
-        <div class="seg sm">
-          <button class="${taskFilter === 'open' ? 'on' : ''}" data-a="task-filter" data-v="open">未完成</button>
-          <button class="${taskFilter === 'done' ? 'on' : ''}" data-a="task-filter" data-v="done">已完成</button>
-        </div>
-        <div class="act">${addBtn('task-new')}</div>
-      </div>
-      ${body}
-    </section>`;
+    ${next ? `<div class="countdown"><b>${nd || '今天'}</b><div><small>${nd ? '天後考試' : '考試'}</small><span>${esc(next.title)}</span></div></div>` : ''}
+    <section class="sec">${body}</section>
+    ${doneList.length ? `<button class="toggle-done" data-a="task-filter" data-v="${showDone ? 'open' : 'done'}">${showDone ? '隱藏' : '顯示'}已完成（${doneList.length}）</button>` : ''}
+    ${showDone && doneList.length ? `<section class="sec">${`<ul>${doneList.map(t => taskRow(t)).join('')}</ul>`}</section>` : ''}`;
 }
 
 /* =========================================================
@@ -572,15 +514,18 @@ function taskSheet(id) {
   const t = id ? data.tasks.find(x => x.id === id) : null;
   const v = t || { title: '', type: '作業', subject: '', due: cur > today() ? cur : addDays(today(), 1), note: '' };
   sheet({
-    title: t ? '編輯項目' : '新增作業 / 考試',
+    title: t ? '編輯' : '新增作業 / 考試',
     body: `<label class="field"><span>名稱</span><input name="title" value="${esc(v.title)}" placeholder="例如：英文第三課習作" autocomplete="off"></label>
       <div class="field"><span>類型</span><div class="pick" data-name="type">${TASK_TYPES.map(x => `<button data-v="${x}" class="${v.type === x ? 'on' : ''}">${x}</button>`).join('')}</div></div>
-      <div class="field"><span>科目</span><div class="pick" data-name="subject">
-        <button data-v="" class="${!v.subject ? 'on' : ''}">不指定</button>
+      <div class="field"><span>日期</span>
+        <div class="quick">${[['今天', 0], ['明天', 1], ['後天', 2], ['下週', 7]].map(([l, n]) => `<button type="button" data-q="${addDays(today(), n)}">${l}</button>`).join('')}</div>
+        <input type="date" name="due" value="${v.due}"></div>
+      <div class="field"><span>科目（選填）</span><div class="pick" data-name="subject">
+        <button data-v="" class="${!v.subject ? 'on' : ''}">無</button>
         ${data.subjects.map(s => `<button class="sc ${v.subject === s.id ? 'on' : ''}" style="--c:${s.color}" data-v="${s.id}">${esc(s.name)}</button>`).join('')}
       </div></div>
-      <label class="field"><span>截止 / 考試日期</span><input type="date" name="due" value="${v.due}"></label>
-      <label class="field"><span>備註（範圍、頁數…）</span><textarea name="note" rows="3">${esc(v.note)}</textarea></label>`,
+      <label class="field"><span>備註（選填）</span><textarea name="note" rows="2" placeholder="範圍、頁數…">${esc(v.note)}</textarea></label>`,
+    onClick: (e, w) => { const q = e.target.closest('[data-q]'); if (q) { $('[name=due]', w).value = q.dataset.q; return true; } },
     save: w => {
       const f = vals(w);
       if (!f.title.trim()) { toast('請輸入名稱'); return false; }
@@ -592,28 +537,7 @@ function taskSheet(id) {
   });
 }
 
-function cellSheet(k) {
-  const [d, p] = k.split('-').map(Number), c = data.timetable[k] || { s: '', room: '' };
-  const per = data.periods[p];
-  sheet({
-    title: `星期${WD_TC[d]}・第 ${p + 1} 節`,
-    body: `<p class="hint" style="margin-top:0">${per.start} – ${per.end}</p>
-      <div class="field"><span>科目</span><div class="pick" data-name="s">
-        <button data-v="" class="${!c.s ? 'on' : ''}">空堂</button>
-        ${data.subjects.map(s => `<button class="sc ${c.s === s.id ? 'on' : ''}" style="--c:${s.color}" data-v="${s.id}">${esc(s.name)}</button>`).join('')}
-      </div></div>
-      <label class="field"><span>教室（選填）</span><input name="room" value="${esc(c.room || '')}" placeholder="例如：實驗室、302" autocomplete="off"></label>
-      <button class="ghost" data-s2="newsub">＋ 新增科目</button>`,
-    save: w => {
-      const s = picked(w, 's');
-      if (!s) delete data.timetable[k];
-      else data.timetable[k] = { s, room: vals(w).room.trim() };
-    },
-    onClick: e => { if (e.target.closest('[data-s2="newsub"]')) { subjectSheet(null, k); return true; } },
-  });
-}
-
-function subjectSheet(id, backToCell) {
+function subjectSheet(id) {
   const s = id ? subj(id) : null;
   const v = s || { name: '', color: PALETTE[data.subjects.length % PALETTE.length] };
   sheet({
@@ -625,17 +549,12 @@ function subjectSheet(id, backToCell) {
       if (!name) { toast('請輸入科目名稱'); return false; }
       const color = picked(w, 'color') || v.color;
       if (s) Object.assign(s, { name, color });
-      else {
-        const n = { id: uid(), name, color };
-        data.subjects.push(n);
-        if (backToCell) { data.timetable[backToCell] = { s: n.id, room: (data.timetable[backToCell] || {}).room || '' }; }
-      }
+      else data.subjects.push({ id: uid(), name, color });
     },
     del: s && {
-      confirm: `刪除「${s.name}」？課表中的這個科目也會被清除。`,
+      confirm: `刪除科目「${s.name}」？`,
       fn: () => {
         data.subjects.splice(data.subjects.indexOf(s), 1);
-        Object.keys(data.timetable).forEach(k => { if (data.timetable[k].s === s.id) delete data.timetable[k]; });
         data.tasks.forEach(t => { if (t.subject === s.id) t.subject = ''; });
       },
     },
@@ -649,15 +568,7 @@ function settingsBody() {
   <div class="set-group"><h4>一般</h4><div class="set-card">
     <div class="set-row"><span>每週開始於</span><div class="seg sm pick" data-name="ws">
       <button data-v="1" class="${st.weekStart === 1 ? 'on' : ''}">週一</button><button data-v="0" class="${st.weekStart === 0 ? 'on' : ''}">週日</button></div></div>
-    <div class="set-row"><span>課表顯示星期六</span><button class="switch ${st.saturday ? 'on' : ''}" data-set="sat" aria-label="課表顯示星期六"></button></div>
   </div></div>
-
-  <div class="set-group"><h4>節次時間</h4><div class="set-card">
-    ${data.periods.map((p, i) => `<div class="per-row"><span>第${i + 1}節</span>
-      <input type="time" data-pi="${i}" data-pf="start" value="${p.start}"><span>–</span>
-      <input type="time" data-pi="${i}" data-pf="end" value="${p.end}">
-      <button class="del-x" data-set="per-del" data-i="${i}" aria-label="刪除第${i + 1}節">${I.x}</button></div>`).join('')}
-  </div><button class="ghost" data-set="per-add">＋ 新增節次</button></div>
 
   <div class="set-group" id="set-habits"><h4>習慣追蹤項目</h4><div class="set-card">
     ${data.habits.map(h => `<div class="hab-row"><span>${esc(h.name)}</span><button class="del-x" data-set="hab-del" data-id="${h.id}" aria-label="刪除">${I.x}</button></div>`).join('')}
@@ -679,10 +590,6 @@ function settingsSheet(focus) {
     body: settingsBody(),
     onMount: w => {
       if (focus === 'habits') setTimeout(() => $('#set-habits', w)?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 360);
-      w.addEventListener('change', e => {
-        const i = e.target.dataset.pi;
-        if (i != null && e.target.value) { data.periods[+i][e.target.dataset.pf] = e.target.value; save(); }
-      });
       w.addEventListener('keydown', e => {
         const inp = e.target.closest('[data-set-add="habit"]');
         if (inp && e.key === 'Enter') {
@@ -698,24 +605,7 @@ function settingsSheet(focus) {
       if (ws) { data.settings.weekStart = +ws.dataset.v; save(); return true; }
       const b = e.target.closest('[data-set]'); if (!b) return;
       const a = b.dataset.set;
-      if (a === 'sat') { data.settings.saturday = !data.settings.saturday; b.classList.toggle('on'); save(); }
-      else if (a === 'per-add') {
-        const last = data.periods[data.periods.length - 1];
-        const st = last ? toHM(toMin(last.end) + 10) : '08:00';
-        data.periods.push({ start: st, end: toHM(toMin(st) + 50) }); save(); rerender(w);
-      }
-      else if (a === 'per-del') {
-        const i = +b.dataset.i;
-        if (!confirm(`刪除第${i + 1}節？之後節次的課會往前移。`)) return true;
-        data.periods.splice(i, 1);
-        const nt = {};
-        Object.entries(data.timetable).forEach(([k, v]) => {
-          const [d, p] = k.split('-').map(Number);
-          if (p < i) nt[k] = v; else if (p > i) nt[`${d}-${p - 1}`] = v;
-        });
-        data.timetable = nt; save(); rerender(w);
-      }
-      else if (a === 'hab-del') {
+      if (a === 'hab-del') {
         const h = data.habits.find(x => x.id === b.dataset.id);
         if (h && confirm(`刪除習慣「${h.name}」？`)) { data.habits.splice(data.habits.indexOf(h), 1); save(); rerender(w); }
       }
@@ -730,7 +620,6 @@ function settingsSheet(focus) {
     },
   });
 }
-const toHM = m => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
 
 async function exportData() {
   save();
@@ -785,7 +674,6 @@ const ACTIONS = {
   'task-edit': b => taskSheet(b.dataset.id),
   'task-toggle': b => { const t = data.tasks.find(x => x.id === b.dataset.id); if (t) { t.done = !t.done; commit(); if (t.done) toast('完成一項，讚！'); } },
   'task-filter': b => { taskFilter = b.dataset.v; render(); },
-  'study-tab': b => { studyTab = b.dataset.v; render('fade'); },
   mood: b => { const D = day(cur), k = +b.dataset.k; D.mood = D.mood === k ? null : k; commit(); },
   habit: b => {
     const s = b.dataset.d, h = b.dataset.h, log = data.habitLog[s] || (data.habitLog[s] = []);
@@ -795,7 +683,6 @@ const ACTIONS = {
   },
   msel: b => { const x = b.dataset.d; if (monthKey(x) !== monthKey(cur)) { const n = x > cur ? 1 : -1; cur = x; render(n > 0 ? 'slide-next' : 'slide-prev'); } else { cur = x; render(); } },
   'open-day': b => { cur = b.dataset.d; setView('day'); },
-  cell: b => cellSheet(b.dataset.k),
   'subj-edit': b => subjectSheet(b.dataset.id),
   'subj-new': () => subjectSheet(null),
 };
