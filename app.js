@@ -21,6 +21,12 @@ const WD_TC = ['日', '一', '二', '三', '四', '五', '六'];
 const TASK_TYPES = ['作業', '考試', '報告', '其他'];
 const PALETTE = ['#c4553a', '#d4903c', '#b9a23f', '#7a9a4a', '#3f8a7c', '#3d6a9e', '#6b5b9a', '#b0607e', '#8a7a66'];
 
+// 空白狀態的線條插圖
+const ILL = {
+  plane: `<svg viewBox="0 0 96 72"><path d="M14 38 L80 12 L64 60 L46 44 Z"/><path d="M46 44 L80 12"/><path d="M46 44 L44 56 L54 50"/><path class="dash" d="M8 58 C18 54 22 62 32 58"/><circle class="acc" cx="84" cy="30" r="2"/><circle class="acc" cx="24" cy="20" r="1.5"/></svg>`,
+  book: `<svg viewBox="0 0 96 72"><path d="M18 18 C30 13 40 15 48 21 C56 15 66 13 78 18 V56 C66 51 56 53 48 59 C40 53 30 51 18 56 Z"/><path d="M48 21 V59"/><path d="M26 28 H40 M26 35 H40 M56 28 H70 M56 35 H66"/><path class="acc" d="M62 14 V28 L65.5 25 L69 28 V14"/></svg>`,
+};
+
 const I = {
   gear: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
   plus: '<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
@@ -124,7 +130,7 @@ function checkList(kind, items, ph) {
   return `<ul>${items.map(t => `
     <li class="todo ${t.done ? 'done' : ''}">
       <button class="chk ${t.done ? 'on' : ''}" data-a="item-toggle" data-k="${kind}" data-id="${t.id}" aria-label="完成">${I.check}</button>
-      <span class="todo-t" data-a="item-edit" data-k="${kind}" data-id="${t.id}">${esc(t.text)}</span>
+      <span class="todo-t" data-a="item-edit" data-k="${kind}" data-id="${t.id}"><span class="st">${esc(t.text)}</span></span>
     </li>`).join('')}</ul>
     <label class="add-wrap">${I.plus}<input class="add-line" data-add="${kind}" placeholder="${ph}" enterkeyhint="done" autocomplete="off"></label>`;
 }
@@ -144,7 +150,7 @@ function taskRow(t, showDate = true) {
   return `<li class="task ${t.done ? 'done' : ''} ${late ? 'late' : ''}">
     <button class="chk ${t.done ? 'on' : ''}" data-a="task-toggle" data-id="${t.id}" aria-label="完成">${I.check}</button>
     <div class="task-main" data-a="task-edit" data-id="${t.id}">
-      <div class="task-t">${esc(t.title)}</div>
+      <div class="task-t"><span class="st">${esc(t.title)}</span></div>
       <div class="task-m">
         <span class="type t-${TASK_TYPES.indexOf(t.type)}">${esc(t.type)}</span>
         ${s ? `<span class="subj" style="--c:${s.color}">${esc(s.name)}</span>` : ''}
@@ -331,7 +337,7 @@ function renderMonth() {
     </section>
     <section class="sec">
       <div class="sec-h"><div class="agenda-h"><span class="d">${sd.getMonth() + 1}/${sd.getDate()}</span><h3>星期${WD_TC[sd.getDay()]}</h3></div><div class="act">${addBtn('ev-new')}</div></div>
-      ${ag.length ? `<div class="wk-body" style="gap:6px">${ag.join('')}</div>` : '<div class="empty">這天沒有安排</div>'}
+      ${ag.length ? `<div class="wk-body" style="gap:6px">${ag.join('')}</div>` : `<div class="ill">${ILL.book}<span>這天還沒有安排</span></div>`}
       <button class="open-day" data-a="open-day" data-d="${cur}">翻到這一天 ${I.arrow}</button>
     </section>
     ${sec('本月目標', 'Goals', checkList('mgoal', M.goals, '這個月的目標…'))}
@@ -367,7 +373,7 @@ function renderTasks() {
   const doneList = data.tasks.filter(t => t.done).sort((a, b) => b.due.localeCompare(a.due));
   let body = '';
   if (!list.length) {
-    body = `<div class="empty" style="padding:14px 0;text-align:center">沒有待完成的作業或考試</div>`;
+    body = `<div class="ill">${ILL.plane}<span>${data.tasks.length ? '全部完成了，好好休息！' : '還沒有作業或考試'}</span><small>按右上角「新增」加入</small></div>`;
   } else {
     const groups = [
       ['已逾期', t => t.due < T, 'late'],
@@ -437,10 +443,37 @@ function sheet({ title, body, save: onSave, del, saveLabel = '完成', onClick, 
     else if (s === 'del') { if (!del.confirm || confirm(del.confirm)) { del.fn(w); closeSheet(); commit(); } }
   });
   // 下滑關閉
-  const sh = $('.sheet', w); let y0 = null, dy = 0;
-  sh.addEventListener('touchstart', e => { y0 = sh.scrollTop <= 0 && e.target.closest('.grab, .sheet-h') ? e.touches[0].clientY : null; dy = 0; }, { passive: true });
-  sh.addEventListener('touchmove', e => { if (y0 == null) return; dy = Math.max(0, e.touches[0].clientY - y0); sh.style.transition = 'none'; sh.style.transform = `translateY(${dy}px)`; }, { passive: true });
-  sh.addEventListener('touchend', () => { if (y0 == null) return; sh.style.transition = ''; sh.style.transform = ''; if (dy > 90) closeSheet(); y0 = null; });
+  // 在表單頂端往下拉（任何位置皆可）就能關閉，表單跟著手指移動
+  const sh = $('.sheet', w), bg = $('.sheet-bg', w);
+  let y0 = null, dy = 0, t0 = 0, drag = false;
+  sh.addEventListener('touchstart', e => {
+    drag = false; dy = 0; t0 = Date.now();
+    y0 = sh.scrollTop <= 0 && !e.target.closest('textarea, .palette') ? e.touches[0].clientY : null;
+  }, { passive: true });
+  sh.addEventListener('touchmove', e => {
+    if (y0 == null) return;
+    const d = e.touches[0].clientY - y0;
+    if (!drag) {
+      if (d < -4) { y0 = null; return; }   // 往上滑＝捲動內容
+      if (d < 8) return;
+      drag = true; y0 += 8;
+      if (document.activeElement && document.activeElement !== document.body) document.activeElement.blur();
+    }
+    dy = Math.max(0, e.touches[0].clientY - y0);
+    sh.style.transition = 'none'; bg.style.transition = 'none';
+    sh.style.transform = `translateY(${dy}px)`;
+    bg.style.opacity = String(Math.max(0, 1 - dy / 450));
+  }, { passive: true });
+  const release = () => {
+    if (!drag) { y0 = null; return; }
+    drag = false; y0 = null;
+    sh.style.transition = ''; bg.style.transition = '';
+    const flick = dy > 40 && Date.now() - t0 < 300;
+    sh.style.transform = ''; bg.style.opacity = '';
+    if (dy > 110 || flick) closeSheet();
+  };
+  sh.addEventListener('touchend', release);
+  sh.addEventListener('touchcancel', release);
 
   if (onMount) onMount(w);
   return w;
@@ -666,20 +699,34 @@ const ACTIONS = {
   today: () => { const old = cur; cur = today(); render(cur > old ? 'slide-next' : 'slide-prev'); },
   settings: b => settingsSheet(b.dataset.focus),
   'close-tip': () => { data.settings.tipClosed = true; commit(); },
-  'item-toggle': b => { const it = listOf(b.dataset.k).find(x => x.id === b.dataset.id); if (it) { it.done = !it.done; if (it.done && navigator.vibrate) navigator.vibrate(8); commit(); } },
+  'item-toggle': b => {
+    const k = b.dataset.k, list = listOf(k), it = list.find(x => x.id === b.dataset.id);
+    if (!it) return;
+    it.done = !it.done; save(); markDone(b, it.done);
+    if (it.done && list.length > 1 && list.every(x => x.done)) celebrate(k === 'todo' ? '今日完成' : '目標達成');
+  },
   'item-edit': b => itemSheet(b.dataset.k, b.dataset.id),
   'ev-new': () => eventSheet(null),
   'ev-edit': b => eventSheet(b.dataset.id),
   'task-new': () => taskSheet(null),
   'task-edit': b => taskSheet(b.dataset.id),
-  'task-toggle': b => { const t = data.tasks.find(x => x.id === b.dataset.id); if (t) { t.done = !t.done; commit(); if (t.done) toast('完成一項，讚！'); } },
+  'task-toggle': b => {
+    const t = data.tasks.find(x => x.id === b.dataset.id);
+    if (!t) return;
+    t.done = !t.done; save(); markDone(b, t.done);
+    if (t.done && data.tasks.every(x => x.done)) celebrate('全部完成');
+  },
   'task-filter': b => { taskFilter = b.dataset.v; render(); },
-  mood: b => { const D = day(cur), k = +b.dataset.k; D.mood = D.mood === k ? null : k; commit(); },
+  mood: b => {
+    const D = day(cur), k = +b.dataset.k; D.mood = D.mood === k ? null : k; save(); haptic();
+    $$('.mood-b').forEach(x => x.classList.toggle('on', +x.dataset.k === D.mood));
+  },
   habit: b => {
     const s = b.dataset.d, h = b.dataset.h, log = data.habitLog[s] || (data.habitLog[s] = []);
     const i = log.indexOf(h); if (i >= 0) log.splice(i, 1); else log.push(h);
     if (!log.length) delete data.habitLog[s];
-    commit();
+    save(); haptic();
+    b.classList.toggle('on', i < 0); pop(b);
   },
   msel: b => { const x = b.dataset.d; if (monthKey(x) !== monthKey(cur)) { const n = x > cur ? 1 : -1; cur = x; render(n > 0 ? 'slide-next' : 'slide-prev'); } else { cur = x; render(); } },
   'open-day': b => { cur = b.dataset.d; setView('day'); },
@@ -687,11 +734,46 @@ const ACTIONS = {
   'subj-new': () => subjectSheet(null),
 };
 
+// 每個分頁記住自己的捲動位置
+const scrollPos = {};
 function setView(v) {
+  const el = $('#view');
+  scrollPos[view] = el.scrollTop;
   view = v;
   try { localStorage.setItem(KEY + ':tab', v); } catch { }
-  $('#view').scrollTop = 0;
   render('fade');
+  el.scrollTop = scrollPos[v] || 0;
+}
+
+/* ---------- 回饋：觸感、打勾動畫、完成印章 ---------- */
+// iOS 18 起，點擊 <input switch> 的 label 會產生系統觸感；其他裝置用 vibrate
+const hapticEl = (() => {
+  const l = document.createElement('label');
+  l.setAttribute('aria-hidden', 'true');
+  l.style.cssText = 'position:fixed;left:-200px;top:0;opacity:0;pointer-events:none';
+  l.innerHTML = '<input type="checkbox" switch tabindex="-1">';
+  document.body.appendChild(l);
+  return l;
+})();
+function haptic() {
+  if (navigator.vibrate) { navigator.vibrate(10); return; }
+  try { hapticEl.click(); } catch { }
+}
+function pop(el) { el.classList.remove('pop'); void el.offsetWidth; el.classList.add('pop'); }
+function markDone(chk, on) {
+  chk.classList.toggle('on', on);
+  const li = chk.closest('li'); if (li) li.classList.toggle('done', on);
+  if (on) { pop(chk); haptic(); }
+  const sc = chk.closest('.sec'), c = sc && $('.count', sc);
+  if (c) c.textContent = `${$$('.chk.on', sc).length}/${$$('.chk', sc).length}`;
+}
+function celebrate(text) {
+  $('.stamp-pop')?.remove();
+  const s = document.createElement('div');
+  s.className = 'stamp-pop';
+  s.innerHTML = `<span>${esc(text)}</span>`;
+  document.body.appendChild(s);
+  setTimeout(() => s.remove(), 1700);
 }
 
 document.addEventListener('click', e => {
@@ -734,19 +816,40 @@ document.addEventListener('input', e => {
   autosize(t); saveSoon();
 });
 
-// 左右滑動切換日期
+// 左右滑動切換日期（畫面跟著手指移動）
 (() => {
-  const v = $('#view'); let sx = null, sy = 0, st = 0;
+  const v = $('#view');
+  let sx = null, sy = 0, st = 0, axis = null, dx = 0, inner = null;
   v.addEventListener('touchstart', e => {
-    if (e.touches.length !== 1 || view === 'study' || e.target.closest('textarea, input, .classes, .hgrid')) { sx = null; return; }
+    if (e.touches.length !== 1 || view === 'study' || e.target.closest('textarea, input, .hgrid')) { sx = null; return; }
     sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = Date.now();
+    axis = null; dx = 0; inner = v.firstElementChild;
   }, { passive: true });
-  v.addEventListener('touchend', e => {
+  v.addEventListener('touchmove', e => {
+    if (sx == null || !inner) return;
+    const x = e.touches[0].clientX - sx, y = e.touches[0].clientY - sy;
+    if (!axis) {
+      if (Math.abs(x) < 10 && Math.abs(y) < 10) return;
+      axis = Math.abs(x) > Math.abs(y) * 1.2 ? 'x' : 'y';
+      if (axis === 'x') v.classList.remove('slide-next', 'slide-prev', 'fade');
+    }
+    if (axis !== 'x') return;
+    dx = x;
+    inner.style.transition = 'none';
+    inner.style.transform = `translateX(${x * 0.5}px)`;
+    inner.style.opacity = String(1 - Math.min(Math.abs(x) / 500, 0.45));
+  }, { passive: true });
+  const end = () => {
     if (sx == null) return;
-    const dx = e.changedTouches[0].clientX - sx, dy = e.changedTouches[0].clientY - sy;
     sx = null;
-    if (Math.abs(dx) > 70 && Math.abs(dy) < Math.abs(dx) * 0.5 && Date.now() - st < 600) step(dx < 0 ? 1 : -1);
-  }, { passive: true });
+    if (axis !== 'x' || !inner) return;
+    const fast = Math.abs(dx) > 30 && Date.now() - st < 250;
+    if (Math.abs(dx) > 70 || fast) { step(dx < 0 ? 1 : -1); return; }
+    inner.style.transition = 'transform .35s cubic-bezier(.2,.8,.2,1), opacity .35s';
+    inner.style.transform = ''; inner.style.opacity = '';
+  };
+  v.addEventListener('touchend', end, { passive: true });
+  v.addEventListener('touchcancel', end, { passive: true });
 })();
 
 // 隔天打開時自動跳到今天

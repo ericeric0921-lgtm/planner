@@ -50,6 +50,7 @@ ul{list-style:none;margin:0;padding:0}
 
 #app{height:100%;}
 #view{
+  touch-action:pan-y;
   height:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;
   padding:calc(env(safe-area-inset-top) + 14px) max(18px, env(safe-area-inset-left)) calc(var(--tabbar) + env(safe-area-inset-bottom) + 28px);
   background-image:radial-gradient(var(--dot) 1px, transparent 1.3px);
@@ -150,11 +151,46 @@ ul{list-style:none;margin:0;padding:0}
 .chk.on{border-color:var(--line-2)}
 .chk.on svg{stroke-dashoffset:0}
 .chk:active{transform:scale(.88)}
+.pop{animation:pop .42s cubic-bezier(.3,1.6,.5,1)}
+@keyframes pop{0%{transform:scale(.8)}45%{transform:scale(1.18)}100%{transform:scale(1)}}
+.todo.done,.task.done{animation:settle .4s ease}
+@keyframes settle{0%{transform:none}35%{transform:translateX(3px)}100%{transform:none}}
+
+/* 完成印章 */
+.stamp-pop{position:fixed;inset:0;z-index:90;display:grid;place-items:center;pointer-events:none}
+.stamp-pop span{
+  font-family:var(--serif-tc);font-weight:700;font-size:30px;letter-spacing:.2em;color:var(--accent);
+  padding:12px 18px 12px 24px;border:3px double var(--accent);border-radius:12px;
+  background:color-mix(in srgb,var(--paper) 88%,transparent);
+  -webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);
+  animation:stampIn 1.7s cubic-bezier(.2,.9,.3,1) forwards;
+}
+@keyframes stampIn{
+  0%{opacity:0;transform:scale(2.2) rotate(-4deg)}
+  18%{opacity:1;transform:scale(.94) rotate(-12deg)}
+  26%{transform:scale(1) rotate(-11deg)}
+  78%{opacity:1;transform:scale(1) rotate(-11deg)}
+  100%{opacity:0;transform:scale(1.03) rotate(-11deg)}
+}
+
+/* 空白插圖 */
+.ill{display:flex;flex-direction:column;align-items:center;gap:6px;padding:16px 0 12px;color:var(--ink-3);font-size:14px;text-align:center}
+.ill svg{width:96px;height:72px;stroke-width:1.4;color:var(--ink-3);margin-bottom:4px}
+.ill svg .dash{stroke-dasharray:3 4}
+.ill svg .acc{stroke:var(--accent)}
+.ill span{color:var(--ink-2)}
+.ill small{font-size:12px}
 
 /* Todo-ish rows */
 .todo{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px dashed var(--line)}
 .todo-t{flex:1;font-size:15.5px;line-height:1.45;word-break:break-word;cursor:pointer;transition:color .25s}
-.todo.done .todo-t{color:var(--ink-3);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--accent) 70%,transparent);text-decoration-thickness:1.5px}
+/* 手寫感刪除線：完成時從左畫到右 */
+.st{
+  background:linear-gradient(color-mix(in srgb,var(--accent) 75%,transparent),color-mix(in srgb,var(--accent) 75%,transparent)) 0 58%/0 1.6px no-repeat;
+  -webkit-box-decoration-break:clone;box-decoration-break:clone;
+  transition:background-size .4s cubic-bezier(.6,0,.2,1),color .3s;
+}
+.done .st{background-size:100% 1.6px;color:var(--ink-3)}
 .add-wrap{display:flex;align-items:center;gap:12px;padding:4px 0 0;color:var(--ink-3)}
 .add-wrap svg{width:22px;height:22px;padding:2px;stroke-width:1.8}
 .add-line{flex:1;border:0;outline:0;background:transparent;font-size:16px;padding:9px 0;color:var(--ink)}
@@ -180,13 +216,12 @@ ul{list-style:none;margin:0;padding:0}
 .task .chk{margin-top:1px}
 .task-main{flex:1;min-width:0;cursor:pointer}
 .task-t{font-size:15.5px;line-height:1.4;word-break:break-word}
-.task.done .task-t{color:var(--ink-3);text-decoration:line-through;text-decoration-color:color-mix(in srgb,var(--accent) 70%,transparent)}
 .task-m{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;margin-top:4px;font-size:12px;color:var(--ink-2)}
 .type{font-size:11px;padding:1px 6px;border-radius:4px;border:1px solid var(--line-2);color:var(--ink-2);letter-spacing:.08em}
 .type.t-1{color:var(--accent);border-color:var(--accent);font-weight:600}
 .type.t-2{color:var(--blue);border-color:color-mix(in srgb,var(--blue) 60%,transparent)}
 .subj{display:inline-flex;align-items:center;gap:5px}
-.subj::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--c)}
+.subj::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--cx)}
 .due{color:var(--ink-3)}
 .task.late .due{color:var(--accent);font-weight:600}
 .dchip{font-family:var(--serif);font-weight:600;font-size:14px;color:var(--ink-2);margin-left:auto;padding-top:1px;white-space:nowrap}
@@ -234,7 +269,7 @@ ul{list-style:none;margin:0;padding:0}
 .wk-it{font-size:14px;line-height:1.35;display:flex;gap:8px;min-width:0}
 .wk-it .tm{font-family:var(--serif);font-weight:600;color:var(--ink-2);flex:none;min-width:36px}
 .wk-it .tx{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.wk-it.tk .tx::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:middle;position:relative;top:-1px}
+.wk-it.tk .tx::before{content:"";display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--c);margin-right:6px;vertical-align:middle;position:relative;top:-1px;background:var(--cx)}
 .wk-it.tk.exam .tx{color:var(--accent);font-weight:600}
 .wk-prog{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink-3);margin-top:2px}
 .bar{width:64px;height:4px;border-radius:4px;background:var(--line);overflow:hidden}
@@ -267,7 +302,7 @@ ul{list-style:none;margin:0;padding:0}
 .mc.sel .mc-n{color:var(--paper)}
 .mc.sel.today .mc-n::before{border-color:var(--paper)}
 .mc-dots{display:flex;gap:3px;height:6px;align-items:center}
-.mc-dots i{width:5px;height:5px;border-radius:50%;background:var(--c,var(--ink-2))}
+.mc-dots i{width:5px;height:5px;border-radius:50%;background:var(--cx,var(--ink-2))}
 .mc-dots i.sq{border-radius:1px;transform:rotate(45deg);background:var(--accent);width:5px;height:5px}
 .mc.sel .mc-dots i{box-shadow:0 0 0 1px var(--ink)}
 .mc.sel .mc-dots i:not([style]):not(.sq){background:var(--paper)}
@@ -293,8 +328,8 @@ ul{list-style:none;margin:0;padding:0}
 .seg.sm button{padding:5px 12px;font-size:13px}
 
 .chips{display:flex;flex-wrap:wrap;gap:8px;padding-top:4px}
-.chip{display:inline-flex;align-items:center;gap:7px;padding:7px 13px 7px 11px;border-radius:99px;font-size:14px;background:color-mix(in srgb,var(--c,var(--ink-3)) 12%,var(--card));border:1px solid color-mix(in srgb,var(--c,var(--ink-3)) 35%,transparent)}
-.chip::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--c)}
+.chip{display:inline-flex;align-items:center;gap:7px;padding:7px 13px 7px 11px;border-radius:99px;font-size:14px;background:color-mix(in srgb,var(--cx,var(--ink-3)) 12%,var(--card));border:1px solid color-mix(in srgb,var(--cx,var(--ink-3)) 35%,transparent)}
+.chip::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--cx)}
 .chip.add{background:transparent;border:1px dashed var(--line-2);color:var(--ink-2)}
 .chip.add::before{display:none}
 .chip.add svg{width:15px;height:15px}
@@ -313,6 +348,7 @@ ul{list-style:none;margin:0;padding:0}
 .sheet-wrap{position:fixed;inset:0;z-index:50}
 .sheet-bg{position:absolute;inset:0;background:rgba(25,18,10,.38);opacity:0;transition:opacity .3s}
 .sheet{
+  overscroll-behavior:contain;
   position:absolute;left:0;right:0;bottom:0;max-height:90%;overflow-y:auto;-webkit-overflow-scrolling:touch;
   background:var(--paper);border-radius:22px 22px 0 0;
   padding:0 18px calc(env(safe-area-inset-bottom) + 22px);
@@ -342,7 +378,7 @@ input::-webkit-date-and-time-value{text-align:left}
 .pick button{padding:8px 14px;border-radius:99px;border:1px solid var(--line-2);font-size:14.5px;color:var(--ink-2);background:var(--card);transition:all .18s}
 .pick button.on{background:var(--ink);border-color:var(--ink);color:var(--paper)}
 .pick button.sc{display:inline-flex;align-items:center;gap:6px}
-.pick button.sc::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--c)}
+.pick button.sc::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--cx)}
 .pick button.sc.on{background:var(--c);border-color:var(--c);color:#fff}
 .pick button.sc.on::before{background:#fff}
 .palette{display:flex;flex-wrap:wrap;gap:12px;padding:4px 2px}
@@ -378,4 +414,14 @@ input::-webkit-date-and-time-value{text-align:left}
 
 @media (min-width:700px){
   .big-num{font-size:96px}
+}
+
+/* 科目色：深色模式提亮，避免在深底上看不清 */
+[style*="--c:"]{--cx:var(--c)}
+@media (prefers-color-scheme: dark){
+  [style*="--c:"]{--cx:color-mix(in srgb,var(--c) 68%,#fff)}
+  .pick button.sc.on{background:color-mix(in srgb,var(--c) 85%,#fff)}
+  .type.t-2{color:var(--blue)}
+  .habit.on,.hc.on{background:var(--ink);border-color:var(--ink)}
+  .stamp-pop span{background:color-mix(in srgb,var(--paper) 80%,transparent)}
 }
