@@ -50,7 +50,25 @@ const MOODS = [
   { k: 4, l: '不錯', m: 'M8.6 14.6 Q12 17.2 15.4 14.6' },
   { k: 5, l: '超棒', m: 'M8 14 Q12 19.2 16 14' },
 ];
-const face = m => `<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.3"/><circle cx="9" cy="10" r=".9" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r=".9" fill="currentColor" stroke="none"/><path d="${m.m}"/></svg>`;
+const MOOD_C = { 1: '#7d8db3', 2: '#a3b8cc', 3: '#b3c296', 4: '#e8b46f', 5: '#d76f52' };
+
+// 每日貼紙（印章）
+const STICKERS = [
+  { k: 'exam', l: '考試', c: '#c4553a', p: '<path d="M5 19l1.5-5L16 4.5a2.1 2.1 0 0 1 3 3L9.5 17z"/><path d="M14 6.5l3 3"/>' },
+  { k: 'study', l: '讀書', c: '#3d6a9e', p: '<path d="M4 6c3-1.5 5.5-1.2 8 .5 2.5-1.7 5-2 8-.5v12c-3-1.5-5.5-1.2-8 .5-2.5-1.7-5-2-8-.5z"/><path d="M12 6.5v12"/>' },
+  { k: 'bday', l: '生日', c: '#b0607e', p: '<path d="M4 20h16v-7H4z"/><path d="M4 15.5c2 1.3 4 1.3 6 0s4-1.3 6 0 3 1.3 4 .5"/><path d="M12 13V9.5"/><path d="M12 7c-.9-1-.9-2.2 0-3.2.9 1 .9 2.2 0 3.2z"/>' },
+  { k: 'trip', l: '出遊', c: '#3f8a7c', p: '<path d="M3 19l6-9 4 5.5 2.5-3L21 19z"/><circle cx="17" cy="6.5" r="2"/>' },
+  { k: 'sport', l: '運動', c: '#7a9a4a', p: '<path d="M6.5 7v10M17.5 7v10M3.5 9.5v5M20.5 9.5v5M6.5 12h11"/>' },
+  { k: 'heart', l: '約會', c: '#d0607a', p: '<path d="M12 19.5s-7-4.3-7-9.6A3.9 3.9 0 0 1 12 7.6a3.9 3.9 0 0 1 7 2.3c0 5.3-7 9.6-7 9.6z"/>' },
+  { k: 'star', l: '重要', c: '#d4903c', p: '<path d="M12 3.5l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z"/>' },
+  { k: 'party', l: '聚會', c: '#6b5b9a', p: '<path d="M12 14.5c-3.2 0-5.5-2.8-5.5-6S8.8 3 12 3s5.5 2.3 5.5 5.5-2.3 6-5.5 6z"/><path d="M11 16.5h2l-1-2z"/><path d="M12 16.5c0 2-2 2.2-2 4.5"/>' },
+  { k: 'rest', l: '休息', c: '#7e6f9e', p: '<path d="M19.5 14.5A7.5 7.5 0 1 1 9.5 4.5a6 6 0 0 0 10 10z"/>' },
+  { k: 'money', l: '花費', c: '#b9a23f', p: '<circle cx="12" cy="12" r="8.5"/><path d="M14.8 9.6c-.4-.9-1.5-1.4-2.8-1.4-1.6 0-2.8.8-2.8 1.9s1.2 1.6 2.8 1.9 2.8.8 2.8 1.9-1.2 1.9-2.8 1.9c-1.3 0-2.4-.5-2.8-1.4M12 6.5v1.7M12 15.8v1.7"/>' },
+];
+const stk = k => STICKERS.find(s => s.k === k);
+const stkIcon = (s, cls = '') => `<span class="stk ${cls}" style="--c:${s.c}" title="${s.l}"><svg viewBox="0 0 24 24">${s.p}</svg></span>`;
+
+const face = m =>`<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9.3"/><circle cx="9" cy="10" r=".9" fill="currentColor" stroke="none"/><circle cx="15" cy="10" r=".9" fill="currentColor" stroke="none"/><path d="${m.m}"/></svg>`;
 
 /* ---------- 資料 ---------- */
 const KEY = 'planner-plus-v1';
@@ -93,7 +111,7 @@ function save() {
 }
 function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 400); }
 
-const emptyDay = () => ({ todos: [], events: [], note: '', mood: null });
+const emptyDay = () => ({ todos: [], events: [], note: '', mood: null, stickers: [] });
 const peekDay = s => data.days[s] || emptyDay();
 const day = s => data.days[s] || (data.days[s] = emptyDay());
 const weekStart = s => { const d = parse(s); d.setDate(d.getDate() - (d.getDay() - data.settings.weekStart + 7) % 7); return ymd(d); };
@@ -128,6 +146,7 @@ let cur = today();
 let lastToday = today();
 let view = (() => { try { return localStorage.getItem(KEY + ':tab') || 'day'; } catch { return 'day'; } })();
 let taskFilter = 'open';
+let monthMode = 'plan'; // 'plan' | 'mood'
 
 /* ---------- 共用片段 ---------- */
 const sec = (tc, en, body, act = '') =>
@@ -174,7 +193,7 @@ const ROW_ACTS = `<div class="row-acts" aria-hidden="true"><span class="ra-l">${
 
 function hasContent(s) {
   const D = data.days[s];
-  return !!(D && (D.todos.length || D.events.length || D.note)) || data.tasks.some(t => t.due === s);
+  return !!(D && (D.todos.length || D.events.length || D.note || (D.stickers || []).length)) || data.tasks.some(t => t.due === s);
 }
 
 /* =========================================================
@@ -255,6 +274,9 @@ function renderDay() {
         <div class="day-meta">
           <span class="day-wd">星期${WD_TC[d.getDay()]}${isToday ? '<span class="stamp">今天</span>' : ''}</span>
         </div>
+        <button class="day-stk ${(D.stickers || []).length ? '' : 'empty'}" data-a="stickers" aria-label="貼紙">
+          ${(D.stickers || []).map(k => stk(k)).filter(Boolean).map(s => stkIcon(s)).join('') || `<span class="stk-add">${I.plus}貼紙</span>`}
+        </button>
       </div>
       <div class="strip">
         <button class="strip-nav" data-a="step" data-n="-7" aria-label="上一週">${I.left}</button>${strip}<button class="strip-nav" data-a="step" data-n="7" aria-label="下一週">${I.right}</button>
@@ -291,7 +313,8 @@ function renderWeek() {
       items.push(`<div class="wk-prog"><span>待辦 ${dn}/${D.todos.length}</span><span class="bar"><i style="width:${dn / D.todos.length * 100}%"></i></span></div>`);
     }
     return `<button class="wk-day ${x === T ? 'today' : ''} ${wd === 0 ? 'sun' : wd === 6 ? 'sat' : ''}" data-a="open-day" data-d="${x}">
-      <div class="wk-date"><span class="wk-n">${xd.getDate()}</span><span class="wk-w">${x === T ? '今天' : '週' + WD_TC[wd]}</span></div>
+      <div class="wk-date"><span class="wk-n">${xd.getDate()}</span><span class="wk-w">${x === T ? '今天' : '週' + WD_TC[wd]}</span>
+        ${(D.stickers || []).length ? `<span class="wk-stk">${D.stickers.slice(0, 2).map(k => stk(k)).filter(Boolean).map(s => stkIcon(s, 'xs')).join('')}</span>` : ''}</div>
       <div class="wk-body">${items.join('') || '<span class="muted">—</span>'}</div>
     </button>`;
   }).join('');
@@ -336,9 +359,14 @@ function renderMonth() {
       if (t.type === '考試') dots.push('<i class="sq"></i>');
       else { const s = subj(t.subject); dots.push(`<i style="--c:${s ? s.color : 'var(--ink-3)'}"></i>`); }
     });
-    cal += `<button class="mc ${xd.getMonth() !== m ? 'out' : ''} ${x === cur ? 'sel' : ''} ${x === T ? 'today' : ''} ${wd === 0 ? 'sun' : wd === 6 ? 'sat' : ''}" data-a="msel" data-d="${x}">
-      <span class="mc-n">${xd.getDate()}</span><span class="mc-dots">${dots.slice(0, 4).join('')}</span></button>`;
+    const st = D && (D.stickers || [])[0] && stk(D.stickers[0]);
+    const moodBg = monthMode === 'mood' && D && D.mood ? ` style="--mood:${MOOD_C[D.mood]}"` : '';
+    cal += `<button class="mc ${xd.getMonth() !== m ? 'out' : ''} ${x === cur ? 'sel' : ''} ${x === T ? 'today' : ''} ${wd === 0 ? 'sun' : wd === 6 ? 'sat' : ''} ${moodBg ? 'has-mood' : ''}" data-a="msel" data-d="${x}"${moodBg}>
+      <span class="mc-n">${xd.getDate()}</span>${monthMode === 'plan' ? `<span class="mc-dots">${dots.slice(0, 4).join('')}</span>${st ? stkIcon(st, 'mc-stk') : ''}` : ''}</button>`;
   }
+  const legend = monthMode === 'plan'
+    ? `<div class="legend"><span><i></i>行程</span><span><i class="cc"></i>作業・報告</span><span><i class="sq"></i>考試</span></div>`
+    : `<div class="legend mood-legend">${MOODS.map(mo => `<span><i style="background:${MOOD_C[mo.k]}"></i>${mo.l}</span>`).join('')}</div>`;
 
   // 選取日預覽
   const sd = parse(cur), SD = peekDay(cur);
@@ -357,10 +385,14 @@ function renderMonth() {
         <h1 class="title">${m + 1} 月</h1>
         <div class="navs"><button class="nav-btn" data-a="mstep" data-n="-1" aria-label="上個月">${I.left}</button><button class="nav-btn" data-a="mstep" data-n="1" aria-label="下個月">${I.right}</button></div>
       </div>
+      <div class="seg full sm">
+        <button class="${monthMode === 'plan' ? 'on' : ''}" data-a="month-mode" data-v="plan">計畫</button>
+        <button class="${monthMode === 'mood' ? 'on' : ''}" data-a="month-mode" data-v="mood">心情</button>
+      </div>
     </header>
     <section class="sec">
-      <div class="cal">${cal}</div>
-      <div class="legend"><span><i></i>行程</span><span><i class="cc"></i>作業・報告</span><span><i class="sq"></i>考試</span></div>
+      <div class="cal ${monthMode === 'mood' ? 'mood-mode' : ''}">${cal}</div>
+      ${legend}
     </section>
     <section class="sec">
       <div class="sec-h"><div class="agenda-h"><span class="d">${sd.getMonth() + 1}/${sd.getDate()}</span><h3>星期${WD_TC[sd.getDay()]}</h3></div><div class="act">${addBtn('ev-new')}</div></div>
@@ -369,6 +401,7 @@ function renderMonth() {
     </section>
     ${sec('本月目標', 'Goals', checkList('mgoal', M.goals, '這個月的目標…'))}
     ${sec('月記', 'Memo', `<textarea class="lined" data-bind="mmemo" rows="4" placeholder="重要日子、想做的事、月底回顧…">${esc(M.memo)}</textarea>`)}
+    <button class="year-btn" data-a="year" data-y="${y}"><span><b>${y} 年度回顧</b><small>心情年曆・習慣・完成紀錄</small></span>${I.arrow}</button>
   </div>`;
 }
 
@@ -622,6 +655,80 @@ function todoSheet() {
   });
 }
 
+function stickerSheet() {
+  const D = day(cur), sel = [...(D.stickers || [])];
+  sheet({
+    title: `${md(cur)} 的貼紙`,
+    body: `<p class="hint" style="margin-top:0">最多選 4 個，會顯示在每日、週計畫與月曆上。</p>
+      <div class="stk-grid">${STICKERS.map(s => `<button class="stk-opt ${sel.includes(s.k) ? 'on' : ''}" data-k="${s.k}" style="--c:${s.c}">${stkIcon(s, 'lg')}<span>${s.l}</span></button>`).join('')}</div>`,
+    save: () => { D.stickers = sel; },
+    onClick: e => {
+      const b = e.target.closest('.stk-opt'); if (!b) return;
+      const k = b.dataset.k, i = sel.indexOf(k);
+      if (i >= 0) sel.splice(i, 1);
+      else { if (sel.length >= 4) { toast('最多 4 個貼紙'); return true; } sel.push(k); }
+      b.classList.toggle('on', sel.includes(k)); haptic(); pop(b);
+      return true;
+    },
+  });
+}
+
+function yearSheet(y) {
+  const pre = y + '-';
+  const days = Object.entries(data.days).filter(([k]) => k.startsWith(pre));
+  let todoDone = 0, notes = 0, moods = 0;
+  const moodCnt = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, stCnt = {};
+  days.forEach(([, D]) => {
+    todoDone += D.todos.filter(t => t.done).length;
+    if (D.note && D.note.trim()) notes++;
+    if (D.mood) { moods++; moodCnt[D.mood]++; }
+    (D.stickers || []).forEach(s => { stCnt[s] = (stCnt[s] || 0) + 1; });
+  });
+  const taskDone = data.tasks.filter(t => t.done && t.due.startsWith(pre)).length;
+
+  // 心情年曆（一格一天）
+  let px = '';
+  for (let m = 0; m < 12; m++) {
+    px += `<span class="px-m">${m + 1}</span>`;
+    const dim = new Date(y, m + 1, 0).getDate();
+    for (let d = 1; d <= 31; d++) {
+      if (d > dim) { px += '<i class="px-x"></i>'; continue; }
+      const D = data.days[`${y}-${pad(m + 1)}-${pad(d)}`];
+      px += D && D.mood ? `<i style="background:${MOOD_C[D.mood]}"></i>` : '<i></i>';
+    }
+  }
+  const maxM = Math.max(1, ...Object.values(moodCnt));
+  const moodBars = [...MOODS].reverse().map(m => `<div class="mbar"><span class="mf" style="color:${MOOD_C[m.k]}">${face(m)}</span><span class="mb"><i style="width:${moodCnt[m.k] / maxM * 100}%;background:${MOOD_C[m.k]}"></i></span><b>${moodCnt[m.k]}</b></div>`).join('');
+
+  const habs = data.habits.map(h => {
+    let total = 0, best = 0, run = 0;
+    for (let dt = new Date(y, 0, 1); dt.getFullYear() === y; dt.setDate(dt.getDate() + 1)) {
+      if ((data.habitLog[ymd(dt)] || []).includes(h.id)) { total++; run++; best = Math.max(best, run); } else run = 0;
+    }
+    return `<div class="yr-hab"><span>${esc(h.name)}</span><small>共 <b>${total}</b> 天・最長連續 <b>${best}</b> 天</small></div>`;
+  }).join('');
+  const topSt = Object.entries(stCnt).sort((a, b) => b[1] - a[1]).slice(0, 5)
+    .map(([k, n]) => { const s = stk(k); return s ? `<div class="yr-stk">${stkIcon(s, 'lg')}<span>${s.l}</span><b>${n}</b></div>` : ''; }).join('');
+
+  sheet({
+    title: `${y} 年度回顧`, cancel: '關閉',
+    body: `<div class="yr-stats">
+        <div><b>${todoDone}</b><span>完成待辦</span></div>
+        <div><b>${taskDone}</b><span>完成作業・考試</span></div>
+        <div><b>${notes}</b><span>寫日記天數</span></div>
+        <div><b>${moods}</b><span>記錄心情天數</span></div>
+      </div>
+      <h4 class="yr-h">心情年曆</h4>
+      <div class="pixels">${px}</div>
+      <div class="legend mood-legend">${MOODS.map(mo => `<span><i style="background:${MOOD_C[mo.k]}"></i>${mo.l}</span>`).join('')}</div>
+      <h4 class="yr-h">心情分布</h4>${moodBars}
+      ${habs ? `<h4 class="yr-h">習慣</h4>${habs}` : ''}
+      ${topSt ? `<h4 class="yr-h">最常用的貼紙</h4><div class="yr-stks">${topSt}</div>` : ''}
+      <div class="yr-nav"><button data-y2="${y - 1}">${I.left}${y - 1}</button><button data-y2="${y + 1}">${y + 1}${I.right}</button></div>`,
+    onClick: e => { const b = e.target.closest('[data-y2]'); if (b) { yearSheet(+b.dataset.y2); return true; } },
+  });
+}
+
 function quickSheet() {
   sheet({
     title: '快速新增',
@@ -689,6 +796,17 @@ function subjectSheet(id) {
   });
 }
 
+/* ---------- 紙張主題 ---------- */
+const PAPERS = [['dot', '點格'], ['line', '橫線'], ['grid', '方格'], ['plain', '素面']];
+const TONES = [['cream', '米白', '#f6f1e7'], ['kraft', '牛皮', '#e9dcc4'], ['white', '純白', '#fbfbf9'], ['mint', '淡綠', '#eef3ec']];
+function applyPaper() {
+  const r = document.documentElement;
+  r.dataset.paper = data.settings.paper || 'dot';
+  r.dataset.tone = data.settings.tone || 'cream';
+  const meta = $('meta[name="theme-color"][media*="light"]');
+  if (meta) meta.content = (TONES.find(t => t[0] === r.dataset.tone) || TONES[0])[2];
+}
+
 /* ---------- 設定 ---------- */
 function settingsBody() {
   const st = data.settings;
@@ -697,6 +815,12 @@ function settingsBody() {
     <div class="set-row"><span>每週開始於</span><div class="seg sm pick" data-name="ws">
       <button data-v="1" class="${st.weekStart === 1 ? 'on' : ''}">週一</button><button data-v="0" class="${st.weekStart === 0 ? 'on' : ''}">週日</button></div></div>
   </div></div>
+
+  <div class="set-group"><h4>紙張</h4>
+    <div class="paper-row">${PAPERS.map(([v, l]) => `<button class="paper-opt ${(st.paper || 'dot') === v ? 'on' : ''}" data-f="paper" data-v="${v}"><i class="pp-${v}"></i><span>${l}</span></button>`).join('')}</div>
+    <div class="paper-row">${TONES.map(([v, l, c]) => `<button class="paper-opt ${(st.tone || 'cream') === v ? 'on' : ''}" data-f="tone" data-v="${v}"><i class="tn" style="background:${c}"></i><span>${l}</span></button>`).join('')}</div>
+    <p class="hint">紙色在深色模式下不會套用。</p>
+  </div>
 
   <div class="set-group" id="set-habits"><h4>習慣追蹤項目</h4><div class="set-card">
     ${data.habits.map(h => `<div class="hab-row"><span>${esc(h.name)}</span><button class="del-x" data-set="hab-del" data-id="${h.id}" aria-label="刪除">${I.x}</button></div>`).join('')}
@@ -731,6 +855,12 @@ function settingsSheet(focus) {
     onClick: (e, w) => {
       const ws = e.target.closest('.pick[data-name="ws"] button');
       if (ws) { data.settings.weekStart = +ws.dataset.v; save(); return true; }
+      const pp = e.target.closest('.paper-opt');
+      if (pp) {
+        data.settings[pp.dataset.f] = pp.dataset.v; save(); applyPaper(); haptic();
+        $$(`.paper-opt[data-f="${pp.dataset.f}"]`, w).forEach(x => x.classList.toggle('on', x === pp));
+        return true;
+      }
       const b = e.target.closest('[data-set]'); if (!b) return;
       const a = b.dataset.set;
       if (a === 'hab-del') {
@@ -741,7 +871,7 @@ function settingsSheet(focus) {
       else if (a === 'import') $('#importFile').click();
       else if (a === 'reset') {
         if (confirm('確定清除所有資料？此動作無法復原。') && confirm('真的要清除嗎？建議先匯出備份。')) {
-          data = defaults(); save(); closeSheet(); render('fade'); toast('已清除');
+          data = defaults(); save(); closeSheet(); applyPaper(); render('fade'); toast('已清除');
         }
       }
       return true;
@@ -772,7 +902,7 @@ $('#importFile').addEventListener('change', async e => {
     if (!confirm('匯入會覆蓋目前所有資料，確定嗎？')) return;
     const d = defaults();
     data = { ...d, ...p, settings: { ...d.settings, ...(p.settings || {}) } };
-    save(); closeSheet(); render('fade'); toast('匯入完成');
+    save(); closeSheet(); applyPaper(); render('fade'); toast('匯入完成');
   } catch (err) { alert('無法匯入：檔案不是有效的日程本備份。'); }
 });
 
@@ -804,6 +934,9 @@ const ACTIONS = {
   'ev-new': () => eventSheet(null),
   'ev-edit': b => eventSheet(b.dataset.id, b.dataset.rec === '1'),
   quick: () => quickSheet(),
+  stickers: () => stickerSheet(),
+  year: b => yearSheet(+b.dataset.y),
+  'month-mode': b => { monthMode = b.dataset.v; haptic(); render(); },
   'carry-skip': () => { data.settings.carryDone = today(); commit(); },
   'carry-move': () => {
     const T = today(); let n = 0;
@@ -1063,6 +1196,7 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', save);
 
 /* ---------- 啟動 ---------- */
+applyPaper();
 render();
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => { });
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
